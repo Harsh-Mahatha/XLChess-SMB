@@ -307,7 +307,52 @@ Phase 4 acceptance includes **recreating the Gukesh–Sindarov trial post** from
 
 Immediate next steps after this design is approved:
 1. Scaffold the monorepo (npm workspaces, TS config, Express app with health and OpenAPI, shared package, Vitest, lint) and set up the Supabase CLI.
-2. 1.2: write the `smb` schema migrations, then `prisma db pull`.
+2. 1.2: write the `smb` schema migrations, then `prisma db pull` (done, see section 13).
+
+---
+
+## 13. Database schema and provenance (Module 1.2)
+
+Migrations are in `supabase/migrations/`, dev fixtures in `supabase/seed.sql`, and the tests in `tests/integration/db/` (`npm run test:integration`, needs Docker or `SMB_TEST_DATABASE_URL`).
+
+### Tables
+
+| Area | Tables |
+|---|---|
+| Configuration and sources | `post_types`, `post_configs` (versioned, immutable, one active per type), `data_sources` (data `D*` and image `I*`), `source_records` |
+| Work | `post_opportunities` (pinned to an exact `post_configs` row), `opportunity_events` (status history), `jobs` |
+| Research | `research_packages`, `research_claims`, `research_claim_sources` (claim to source record, many to many) |
+| Content | `post_candidates` (slots A/B/C per generation cycle), `post_revisions` (immutable, hashed), `revision_claims`, `revision_assets` |
+| Media | `media_assets` (original, derived, render, evidence), `media_licenses` |
+| Review and publishing | `review_actions`, `publications` (one row per approval and channel), `publication_attempts` |
+| Operations | `post_metrics`, `audit_log`, `retention_policies` |
+
+`post_revisions` is not in the guide's table list, but "one candidate can have multiple revisions" needs it.
+
+### Rules enforced by the database
+- **Append-only history.** Revisions, review actions, claims, licences, status events, candidates, attempts, metrics and the audit log cannot be updated or deleted (`smb.immutable_except()`). A few columns stay writable: publication status fields, `media_assets.deleted_at`, `source_records.raw_payload`, and `post_configs.is_active`.
+- **Approval binding.** An `approve` action must carry the exact `content_hash` of its revision, and a publication must match its approval's revision, hash and approved channel. Changing the text after review therefore cannot be published under the old approval.
+- **Image provenance.** An original has a source URL and image source. A derived asset has a parent and a transform. A render has a template version. An accepted licence must allow commercial use and have a licence URL or saved evidence.
+- **Status history.** A trigger writes `opportunity_events` on every status change. Set `smb.actor`, `smb.reason` and `smb.job_id` with `set_config(..., true)` inside the transaction to record who and why.
+- **No client access.** `anon` and `authenticated` have no privileges on the `smb` schema.
+
+### Tracing a post
+`smb.publication_provenance` returns, per publication: the approval and reviewer, the revision (number, author, hash), the generation (provider, model, prompt version, job), the exact config version, the research package, every cited claim with its source URL, retrieval time and payload hash, every asset with its original photo, source URL and licence, and the status history.
+
+### Retention (`smb.apply_retention(now)`)
+Defaults live in `smb.retention_policies` and can be edited:
+
+| Subject | Default | Effect |
+|---|---|---|
+| `source_raw_payload` | 90 days | `raw_payload` is cleared. URL, hash and normalised record stay. |
+| `unused_image` | 30 days | Original and derived images that never reached an approved revision get `deleted_at`. |
+| `unused_render` | 30 days | Same for rendered graphics. |
+| `job_payload` | 30 days | Payload and result of finished jobs are cleared. The row stays. |
+
+Anything used by an approved or published revision, its ancestor originals, and licence evidence are never touched. The function only marks rows. Removing the files from Storage and running it on a schedule belong to 1.9 and 1.17.
+
+### Deferred to later modules
+`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), config loading and validation (1.3), Storage buckets (1.9), and the job runner and lease reaper (1.17).
 
 ---
 
