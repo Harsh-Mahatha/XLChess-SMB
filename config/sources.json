@@ -1,1 +1,14 @@
-{}
+{
+  "schemaVersion": 1,
+  "sources": [
+    { "id": "D1", "kind": "data", "name": "FIDE", "enabled": true },
+    { "id": "D2", "kind": "data", "name": "Chess.com News", "enabled": true },
+    { "id": "D3", "kind": "data", "name": "Lichess Broadcasts", "enabled": true },
+    { "id": "D4", "kind": "data", "name": "The Week in Chess (TWIC)", "enabled": true },
+    { "id": "D5", "kind": "data", "name": "ChessBase", "enabled": true },
+    { "id": "I1", "kind": "image", "name": "Wikimedia Commons", "enabled": true },
+    { "id": "I2", "kind": "image", "name": "Flickr Creative Commons", "enabled": true },
+    { "id": "I3", "kind": "image", "name": "Unsplash", "enabled": true },
+    { "id": "I4", "kind": "image", "name": "Pexels", "enabled": true }
+  ]
+}

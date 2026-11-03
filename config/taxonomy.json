@@ -1,0 +1,649 @@
+{
+  "schemaVersion": 1,
+  "categories": [
+    {
+      "id": 1,
+      "name": "Upcoming Tournaments",
+      "subtypes": [
+        {
+          "id": "1.1",
+          "name": "World Championship"
+        },
+        {
+          "id": "1.2",
+          "name": "Candidates Tournament & Qualification"
+        },
+        {
+          "id": "1.3",
+          "name": "FIDE World Cup"
+        },
+        {
+          "id": "1.4",
+          "name": "Olympiad"
+        },
+        {
+          "id": "1.5",
+          "name": "Grand Swiss"
+        },
+        {
+          "id": "1.6",
+          "name": "World Rapid & Blitz"
+        },
+        {
+          "id": "1.7",
+          "name": "Grand Chess Tour"
+        },
+        {
+          "id": "1.8",
+          "name": "Tata Steel"
+        },
+        {
+          "id": "1.9",
+          "name": "Norway Chess"
+        },
+        {
+          "id": "1.10",
+          "name": "US Open & National Championships"
+        },
+        {
+          "id": "1.11",
+          "name": "Continental Championships"
+        },
+        {
+          "id": "1.12",
+          "name": "Women's World Championship"
+        },
+        {
+          "id": "1.13",
+          "name": "Youth Championships"
+        },
+        {
+          "id": "1.14",
+          "name": "Other Major Tournaments"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Tournament Coverage",
+      "subtypes": [
+        {
+          "id": "2.1",
+          "name": "Round Results"
+        },
+        {
+          "id": "2.2",
+          "name": "Standings"
+        },
+        {
+          "id": "2.3",
+          "name": "Important Games"
+        },
+        {
+          "id": "2.4",
+          "name": "Upsets"
+        },
+        {
+          "id": "2.5",
+          "name": "Upcoming Rounds"
+        },
+        {
+          "id": "2.6",
+          "name": "Final Results"
+        },
+        {
+          "id": "2.7",
+          "name": "Notable Performances"
+        },
+        {
+          "id": "2.8",
+          "name": "Qualification Outcomes"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Player Rankings & Ratings",
+      "subtypes": [
+        {
+          "id": "3.1",
+          "name": "Open Rankings"
+        },
+        {
+          "id": "3.2",
+          "name": "Women's Rankings"
+        },
+        {
+          "id": "3.3",
+          "name": "Junior Rankings"
+        },
+        {
+          "id": "3.4",
+          "name": "Rapid & Blitz"
+        },
+        {
+          "id": "3.5",
+          "name": "Country Rankings"
+        },
+        {
+          "id": "3.6",
+          "name": "Rating Gains & Losses"
+        },
+        {
+          "id": "3.7",
+          "name": "Rating Milestones"
+        },
+        {
+          "id": "3.8",
+          "name": "Personal Records"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Player Spotlights & Rising Stars",
+      "subtypes": [
+        {
+          "id": "4.1",
+          "name": "World Champions"
+        },
+        {
+          "id": "4.2",
+          "name": "Top Grandmasters"
+        },
+        {
+          "id": "4.3",
+          "name": "Legendary Players"
+        },
+        {
+          "id": "4.4",
+          "name": "Women's Stars"
+        },
+        {
+          "id": "4.5",
+          "name": "Young Grandmasters"
+        },
+        {
+          "id": "4.6",
+          "name": "Emerging Talents"
+        },
+        {
+          "id": "4.7",
+          "name": "Breakthrough Performers"
+        },
+        {
+          "id": "4.8",
+          "name": "Career Stories"
+        },
+        {
+          "id": "4.9",
+          "name": "Players to Watch"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Chess Records & Achievements",
+      "subtypes": [
+        {
+          "id": "5.1",
+          "name": "Youngest Title Holders"
+        },
+        {
+          "id": "5.2",
+          "name": "Highest Ratings"
+        },
+        {
+          "id": "5.3",
+          "name": "Longest & Shortest Games"
+        },
+        {
+          "id": "5.4",
+          "name": "Winning Streaks"
+        },
+        {
+          "id": "5.5",
+          "name": "Championship Records"
+        },
+        {
+          "id": "5.6",
+          "name": "Tournament Records"
+        },
+        {
+          "id": "5.7",
+          "name": "Historic Achievements"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Famous Games",
+      "subtypes": [
+        {
+          "id": "6.1",
+          "name": "World Championship Classics"
+        },
+        {
+          "id": "6.2",
+          "name": "Immortal Games"
+        },
+        {
+          "id": "6.3",
+          "name": "Attacking Games"
+        },
+        {
+          "id": "6.4",
+          "name": "Famous Sacrifices"
+        },
+        {
+          "id": "6.5",
+          "name": "Historic Upsets"
+        },
+        {
+          "id": "6.6",
+          "name": "Miniatures"
+        },
+        {
+          "id": "6.7",
+          "name": "Modern Masterpieces"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Chess Puzzles & Challenges",
+      "subtypes": [
+        {
+          "id": "7.1",
+          "name": "Mate in One/Two/Three"
+        },
+        {
+          "id": "7.2",
+          "name": "Tactical Combinations"
+        },
+        {
+          "id": "7.3",
+          "name": "Best Move"
+        },
+        {
+          "id": "7.4",
+          "name": "Spot the Blunder"
+        },
+        {
+          "id": "7.5",
+          "name": "Defensive Puzzles"
+        },
+        {
+          "id": "7.6",
+          "name": "Endgame Puzzles"
+        },
+        {
+          "id": "7.7",
+          "name": "Famous Positions"
+        },
+        {
+          "id": "7.8",
+          "name": "Guess the Move"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Chess Openings",
+      "subtypes": [
+        {
+          "id": "8.1",
+          "name": "Popular Openings"
+        },
+        {
+          "id": "8.2",
+          "name": "Opening Traps"
+        },
+        {
+          "id": "8.3",
+          "name": "Opening Principles"
+        },
+        {
+          "id": "8.4",
+          "name": "Gambits"
+        },
+        {
+          "id": "8.5",
+          "name": "Variations"
+        },
+        {
+          "id": "8.6",
+          "name": "Grandmaster Choices"
+        },
+        {
+          "id": "8.7",
+          "name": "Statistics & Trends"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Chess Tips & Strategy",
+      "subtypes": [
+        {
+          "id": "9.1",
+          "name": "Beginner Tips"
+        },
+        {
+          "id": "9.2",
+          "name": "Tactics"
+        },
+        {
+          "id": "9.3",
+          "name": "Positional Strategy"
+        },
+        {
+          "id": "9.4",
+          "name": "Calculation"
+        },
+        {
+          "id": "9.5",
+          "name": "Time Management"
+        },
+        {
+          "id": "9.6",
+          "name": "Common Mistakes"
+        },
+        {
+          "id": "9.7",
+          "name": "Training"
+        },
+        {
+          "id": "9.8",
+          "name": "Grandmaster Advice"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "Endgame Knowledge",
+      "subtypes": [
+        {
+          "id": "10.1",
+          "name": "King & Pawn"
+        },
+        {
+          "id": "10.2",
+          "name": "Rook"
+        },
+        {
+          "id": "10.3",
+          "name": "Queen"
+        },
+        {
+          "id": "10.4",
+          "name": "Minor Piece"
+        },
+        {
+          "id": "10.5",
+          "name": "Basic Checkmates"
+        },
+        {
+          "id": "10.6",
+          "name": "Principles"
+        },
+        {
+          "id": "10.7",
+          "name": "Endgame Studies"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "Chess History",
+      "subtypes": [
+        {
+          "id": "11.1",
+          "name": "On This Day"
+        },
+        {
+          "id": "11.2",
+          "name": "Historic Championships"
+        },
+        {
+          "id": "11.3",
+          "name": "Rivalries"
+        },
+        {
+          "id": "11.4",
+          "name": "Tournaments"
+        },
+        {
+          "id": "11.5",
+          "name": "Evolution of Chess"
+        },
+        {
+          "id": "11.6",
+          "name": "Historical Personalities"
+        },
+        {
+          "id": "11.7",
+          "name": "Milestones"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "Chess Facts & Trivia",
+      "subtypes": [
+        {
+          "id": "12.1",
+          "name": "Interesting Facts"
+        },
+        {
+          "id": "12.2",
+          "name": "Statistics"
+        },
+        {
+          "id": "12.3",
+          "name": "Rules"
+        },
+        {
+          "id": "12.4",
+          "name": "Unusual Events"
+        },
+        {
+          "id": "12.5",
+          "name": "Chess Mathematics"
+        },
+        {
+          "id": "12.6",
+          "name": "Myths"
+        },
+        {
+          "id": "12.7",
+          "name": "Did You Know"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "name": "World of Chess",
+      "subtypes": [
+        {
+          "id": "13.1",
+          "name": "Chess Around the World"
+        },
+        {
+          "id": "13.2",
+          "name": "Culture"
+        },
+        {
+          "id": "13.3",
+          "name": "Education"
+        },
+        {
+          "id": "13.4",
+          "name": "Technology & AI"
+        },
+        {
+          "id": "13.5",
+          "name": "Online Chess"
+        },
+        {
+          "id": "13.6",
+          "name": "Growth"
+        },
+        {
+          "id": "13.7",
+          "name": "Personalities & Creators"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "name": "Major Chess News",
+      "subtypes": [
+        {
+          "id": "14.1",
+          "name": "Breaking News"
+        },
+        {
+          "id": "14.2",
+          "name": "Player Announcements"
+        },
+        {
+          "id": "14.3",
+          "name": "FIDE Announcements"
+        },
+        {
+          "id": "14.4",
+          "name": "Industry Developments"
+        },
+        {
+          "id": "14.5",
+          "name": "Significant Stories"
+        },
+        {
+          "id": "14.6",
+          "name": "Controversies"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "name": "Cheating & Fair Play",
+      "subtypes": [
+        {
+          "id": "15.1",
+          "name": "Investigations"
+        },
+        {
+          "id": "15.2",
+          "name": "Regulations"
+        },
+        {
+          "id": "15.3",
+          "name": "Anti-Cheating Technology"
+        },
+        {
+          "id": "15.4",
+          "name": "Official Decisions"
+        },
+        {
+          "id": "15.5",
+          "name": "Online Fair Play"
+        },
+        {
+          "id": "15.6",
+          "name": "Education"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "name": "Community Engagement",
+      "subtypes": [
+        {
+          "id": "16.1",
+          "name": "Polls"
+        },
+        {
+          "id": "16.2",
+          "name": "Player Comparisons"
+        },
+        {
+          "id": "16.3",
+          "name": "Predictions"
+        },
+        {
+          "id": "16.4",
+          "name": "Questions & Debates"
+        },
+        {
+          "id": "16.5",
+          "name": "Favourite Players & Openings"
+        },
+        {
+          "id": "16.6",
+          "name": "Quizzes"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "Chess Quotes & Inspiration",
+      "subtypes": [
+        {
+          "id": "17.1",
+          "name": "Grandmaster Quotes"
+        },
+        {
+          "id": "17.2",
+          "name": "World Champion Quotes"
+        },
+        {
+          "id": "17.3",
+          "name": "Chess Wisdom"
+        },
+        {
+          "id": "17.4",
+          "name": "Inspirational Stories"
+        },
+        {
+          "id": "17.5",
+          "name": "Chess & Life Lessons"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "name": "XLChess Updates",
+      "subtypes": [
+        {
+          "id": "18.1",
+          "name": "Features & Releases"
+        },
+        {
+          "id": "18.2",
+          "name": "Development Milestones"
+        },
+        {
+          "id": "18.3",
+          "name": "Improvements"
+        },
+        {
+          "id": "18.4",
+          "name": "Upcoming Features"
+        },
+        {
+          "id": "18.5",
+          "name": "Community Milestones"
+        },
+        {
+          "id": "18.6",
+          "name": "Tutorials"
+        },
+        {
+          "id": "18.7",
+          "name": "Announcements"
+        }
+      ]
+    }
+  ]
+}

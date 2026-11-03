@@ -352,7 +352,40 @@ Defaults live in `smb.retention_policies` and can be edited:
 Anything used by an approved or published revision, its ancestor originals, and licence evidence are never touched. The function only marks rows. Removing the files from Storage and running it on a schedule belong to 1.9 and 1.17.
 
 ### Deferred to later modules
-`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), config loading and validation (1.3), Storage buckets (1.9), and the job runner and lease reaper (1.17).
+`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), Storage buckets (1.9), and the job runner and lease reaper (1.17).
+
+---
+
+## 14. Post taxonomy and configuration (Module 1.3)
+
+### Files (`/config`)
+
+| File | Purpose |
+|---|---|
+| `taxonomy.json` | The 18 categories and 134 subtypes. A subtype id is `<category>.<n>` in the order of the Feature Definition, so World Championship is `1.1`. Ids are permanent once a config uses them. |
+| `sources.json` | Approved source registry: `D1`–`D5` data, `I1`–`I4` image. Adapter details come with 1.4 and 1.8. |
+| `channels.json` | Per-channel limits and an `enabled` switch. Only X is enabled in V1. A post type may list disabled channels; they are skipped at publish time. |
+| `post-types/<id>-<name>.json` | One file per configured subtype. Only subtypes with a file can run. Files starting with `_` are ignored. |
+
+### Schema
+`PostTypeConfig` in `packages/shared/src/config/schema.ts` has the 15 fields from the guide. Notable rules:
+- `approvalRequired` is the literal `true` and `contentRules.candidateCount` is the literal `3`. They cannot be set to anything else.
+- `schedule` is a list of rules: `weekly`, `daily`, `interval`, `event` (one of the triggers 1.16 can raise) or `manual`.
+- A **phase** can change only its schedule, priority, wording (facts, tone, structure, extra restrictions) and staleness. It cannot touch channels, sources, approval or candidate count, so a phase can never widen what a post type may do. `resolvePhase(config, phaseId)` returns what applies while a phase is active. Deciding which phase is active is 1.15.
+- Unknown fields are rejected everywhere.
+
+### Validation
+`npm run config:validate` checks every file and prints all problems at once. The API runs the same check on start and refuses to boot if it fails. Beyond the schema it checks: unique ids, id exists in the taxonomy, file name starts with the id, every source and channel exists, data and image sources are not mixed up, enabled post types use no disabled source and have at least one enabled channel.
+
+### Versioning and overrides
+- On start, `syncConfigs` compares each file's hash (`canonicalJson`, so key order and formatting do not matter) with the active `post_configs` row. A change inserts the next version and makes it active. Nothing is ever edited in place, and opportunities keep the version they were created with. A database lock makes concurrent starts safe.
+- `config_json` always holds the **effective** config. An operator override is stored as a patch (`override`), with the file it was built on (`file_hash`). Overrides can change only `enabled`, `priority`, `channels` (a subset of the file), `schedule`, and add `contentRules.restrictions`. The merged result is validated in full.
+- When a file changes, a stored override is carried over if it still fits. If not, it is dropped and the sync result says so.
+- Every sync, override and clear writes an `audit_log` row.
+- The HTTP endpoints for overrides arrive with authentication in 1.18. `setOverride`, `clearOverride` and `getActiveConfig` are ready for them.
+
+### Adding a subtype
+Add `config/post-types/<id>-<name>.json` and run `npm run config:validate`. No code changes. `tests/fixtures/config/11.1-on-this-day.json` proves this: a different schedule, timezone and channels load through the same loader.
 
 ---
 

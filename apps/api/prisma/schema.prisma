@@ -196,6 +196,8 @@ model post_configs {
   is_active          Boolean              @default(false)
   created_by         String?
   created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  file_hash          String
+  override           Json?
   post_types         post_types           @relation(fields: [post_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities post_opportunities[]
 

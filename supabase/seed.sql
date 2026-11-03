@@ -5,10 +5,10 @@
 insert into smb.post_types (id, name, description) values
   ('1.1', 'World Championship', 'Weekly and per-game World Championship coverage');
 
-insert into smb.post_configs (id, post_type_id, version, config_json, content_hash, origin, is_active) values
+insert into smb.post_configs (id, post_type_id, version, config_json, content_hash, file_hash, origin, is_active) values
   ('00000000-0000-4000-8000-000000000101', '1.1', 1,
    '{"id":"1.1","name":"World Championship","enabled":true,"approvalRequired":true}',
-   encode(sha256('seed-config-1.1-v1'::bytea), 'hex'), 'file', true);
+   encode(sha256('seed-config-1.1-v1'::bytea), 'hex'), encode(sha256('seed-config-1.1-v1'::bytea), 'hex'), 'file', true);
 
 insert into smb.data_sources (id, kind, name) values
   ('D1', 'data', 'Placeholder data source 1'),

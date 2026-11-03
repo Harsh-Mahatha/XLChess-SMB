@@ -1,1 +1,41 @@
-{}
+{
+  "schemaVersion": 1,
+  "channels": [
+    {
+      "id": "x",
+      "name": "X",
+      "enabled": true,
+      "maxTextLength": 280,
+      "maxImages": 4,
+      "mediaRequired": false,
+      "altTextRequired": true
+    },
+    {
+      "id": "facebook",
+      "name": "Facebook",
+      "enabled": false,
+      "maxTextLength": 63206,
+      "maxImages": 10,
+      "mediaRequired": false,
+      "altTextRequired": true
+    },
+    {
+      "id": "instagram",
+      "name": "Instagram",
+      "enabled": false,
+      "maxTextLength": 2200,
+      "maxImages": 10,
+      "mediaRequired": true,
+      "altTextRequired": true
+    },
+    {
+      "id": "discord",
+      "name": "Discord",
+      "enabled": false,
+      "maxTextLength": 2000,
+      "maxImages": 10,
+      "mediaRequired": false,
+      "altTextRequired": false
+    }
+  ]
+}

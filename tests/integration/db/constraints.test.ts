@@ -35,8 +35,8 @@ describe('opportunities and candidates', () => {
   it('allows only one active config per post type', async () => {
     await expect(
       q(
-        `insert into smb.post_configs (post_type_id, version, config_json, content_hash, origin, is_active)
-         values ('1.1', 2, '{}', $1, 'override', true)`,
+        `insert into smb.post_configs (post_type_id, version, config_json, content_hash, file_hash, origin, override, is_active)
+         values ('1.1', 2, '{}', $1, $1, 'override', '{}', true)`,
         [hex('b')],
       ),
     ).rejects.toThrow(/post_configs_one_active/);
