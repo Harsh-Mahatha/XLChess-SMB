@@ -1,0 +1,13 @@
+// Introspected from the Supabase `smb` schema via `npm run db:pull`.
+// Do NOT hand-edit models and NEVER run `prisma migrate`: SQL in /supabase/migrations is the source of truth.
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["smb"]
+}

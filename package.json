@@ -1,0 +1,41 @@
+{
+  "name": "xlchess-smb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "XLChess Social Media Bot (SMB): backend API, home-PC AI worker and shared contracts",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @smb/shared && npm run build -w @smb/api && npm run build -w @smb/worker",
+    "dev:api": "npm run dev -w @smb/api",
+    "dev:worker": "npm run dev -w @smb/worker",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:migration:new": "supabase migration new",
+    "db:pull": "npm run db:pull -w @smb/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "supabase": "^2.0.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^2.1.8"
+  }
+}
