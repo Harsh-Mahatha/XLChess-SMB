@@ -11,15 +11,15 @@ insert into smb.post_configs (id, post_type_id, version, config_json, content_ha
    encode(sha256('seed-config-1.1-v1'::bytea), 'hex'), encode(sha256('seed-config-1.1-v1'::bytea), 'hex'), 'file', true);
 
 insert into smb.data_sources (id, kind, name) values
-  ('D1', 'data', 'Placeholder data source 1'),
-  ('D2', 'data', 'Placeholder data source 2'),
-  ('D3', 'data', 'Placeholder data source 3'),
-  ('D4', 'data', 'Placeholder data source 4'),
-  ('D5', 'data', 'Placeholder data source 5'),
-  ('I1', 'image', 'Placeholder image source 1'),
-  ('I2', 'image', 'Placeholder image source 2'),
-  ('I3', 'image', 'Placeholder image source 3'),
-  ('I4', 'image', 'Placeholder image source 4');
+  ('D1', 'data', 'FIDE'),
+  ('D2', 'data', 'Chess.com News'),
+  ('D3', 'data', 'Lichess Broadcasts'),
+  ('D4', 'data', 'The Week in Chess (TWIC)'),
+  ('D5', 'data', 'ChessBase'),
+  ('I1', 'image', 'Wikimedia Commons'),
+  ('I2', 'image', 'Flickr Creative Commons'),
+  ('I3', 'image', 'Unsplash'),
+  ('I4', 'image', 'Pexels');
 
 insert into smb.source_records (id, source_id, url, retrieved_at, event_time, raw_payload, payload_hash, normalised) values
   ('00000000-0000-4000-8000-000000000201', 'D1', 'https://example.org/wcc/game-7', '2026-11-03 10:00+00', '2026-11-03 09:30+00',
