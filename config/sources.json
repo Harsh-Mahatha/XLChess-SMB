@@ -1,11 +1,146 @@
 {
   "schemaVersion": 1,
   "sources": [
-    { "id": "D1", "kind": "data", "name": "FIDE", "enabled": true },
-    { "id": "D2", "kind": "data", "name": "Chess.com News", "enabled": true },
-    { "id": "D3", "kind": "data", "name": "Lichess Broadcasts", "enabled": true },
-    { "id": "D4", "kind": "data", "name": "The Week in Chess (TWIC)", "enabled": true },
-    { "id": "D5", "kind": "data", "name": "ChessBase", "enabled": true },
+    {
+      "id": "D1",
+      "kind": "data",
+      "name": "FIDE",
+      "enabled": true,
+      "reliability": "official",
+      "access": {
+        "method": "file_download",
+        "baseUrl": "https://ratings.fide.com/",
+        "auth": "none",
+        "termsUrl": "https://www.fide.com/"
+      },
+      "policy": {
+        "status": "pending_verification",
+        "automatedRetrieval": false,
+        "attributionRequired": true,
+        "notes": "No public API; monthly rating lists are downloadable files. Terms not yet checked for automated use."
+      },
+      "capabilities": [],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 5000,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": {}
+      }
+    },
+    {
+      "id": "D2",
+      "kind": "data",
+      "name": "Chess.com News",
+      "enabled": true,
+      "reliability": "publication",
+      "access": {
+        "method": "none",
+        "auth": "none",
+        "termsUrl": "https://www.chess.com/legal/user-agreement"
+      },
+      "policy": {
+        "status": "pending_verification",
+        "automatedRetrieval": false,
+        "attributionRequired": true,
+        "notes": "The public Published-Data API covers players and games, not news. Automated news retrieval needs written permission or a feed whose terms allow it."
+      },
+      "capabilities": [],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 5000,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": {}
+      }
+    },
+    {
+      "id": "D3",
+      "kind": "data",
+      "name": "Lichess Broadcasts",
+      "enabled": true,
+      "reliability": "structured_feed",
+      "access": {
+        "method": "api",
+        "baseUrl": "https://lichess.org/api/",
+        "auth": "none",
+        "termsUrl": "https://lichess.org/terms-of-service"
+      },
+      "policy": {
+        "status": "approved",
+        "verifiedAt": "2026-11-04",
+        "automatedRetrieval": true,
+        "attributionRequired": true,
+        "notes": "Public documented API; terms allow personal and commercial use of the API within reasonable limits. Lichess asks for one request at a time and a pause of at least a minute after HTTP 429. Unauthenticated broadcast endpoints are heavily rate-limited and may stop working; switch to a token if so. See docs/sources/D3-lichess-broadcasts.md."
+      },
+      "capabilities": ["events", "games"],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 1000,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": { "events": 300, "games": 60 }
+      }
+    },
+    {
+      "id": "D4",
+      "kind": "data",
+      "name": "The Week in Chess (TWIC)",
+      "enabled": true,
+      "reliability": "publication",
+      "access": {
+        "method": "file_download",
+        "baseUrl": "https://theweekinchess.com/",
+        "auth": "none",
+        "termsUrl": "https://theweekinchess.com/"
+      },
+      "policy": {
+        "status": "pending_verification",
+        "automatedRetrieval": false,
+        "attributionRequired": true,
+        "notes": "No API; weekly PGN archives are downloadable files. Terms not yet checked for automated use."
+      },
+      "capabilities": [],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 5000,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": {}
+      }
+    },
+    {
+      "id": "D5",
+      "kind": "data",
+      "name": "ChessBase",
+      "enabled": true,
+      "reliability": "publication",
+      "access": {
+        "method": "rss",
+        "baseUrl": "https://en.chessbase.com/",
+        "auth": "none",
+        "termsUrl": "https://en.chessbase.com/"
+      },
+      "policy": {
+        "status": "pending_verification",
+        "automatedRetrieval": false,
+        "attributionRequired": true,
+        "notes": "Feed reuse terms are unclear. Not approved for automated retrieval."
+      },
+      "capabilities": [],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 5000,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": {}
+      }
+    },
     { "id": "I1", "kind": "image", "name": "Wikimedia Commons", "enabled": true },
     { "id": "I2", "kind": "image", "name": "Flickr Creative Commons", "enabled": true },
     { "id": "I3", "kind": "image", "name": "Unsplash", "enabled": true },
