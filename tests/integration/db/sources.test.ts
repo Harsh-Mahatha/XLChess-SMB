@@ -58,24 +58,35 @@ describe('source registry sync', () => {
           )
         )[0]!.n,
       );
-    expect(await auditCount()).toBe(9);
+    // The seed already holds a row per source, so some rows are updated and some may already match.
+    // Exactly the changed rows get an audit entry.
+    const changedRows = first.filter((r) => r.action !== 'unchanged').length;
+    expect(changedRows).toBeGreaterThan(0);
+    expect(await auditCount()).toBe(changedRows);
 
     const second = await syncSources(prisma, registry);
     expect(second.every((r) => r.action === 'unchanged')).toBe(true);
-    expect(await auditCount()).toBe(9); // the second run added no entries
+    expect(await auditCount()).toBe(changedRows); // the second run added no entries
   });
 
   it('records a change as an update with an audit entry', async () => {
     const changed = structuredClone(registry);
     const d3 = changed.sources.find((s) => s.id === 'D3')!;
     if (d3.kind === 'data') d3.limits.minIntervalMs = 2000;
+    const d3Updates = async () =>
+      Number(
+        (
+          await rows<{ n: string }>(
+            pgc,
+            "select count(*) as n from smb.audit_log where action = 'source.update' and target_id = 'D3'",
+          )
+        )[0]!.n,
+      );
+    const before = await d3Updates();
     const res = await syncSources(prisma, changed);
     expect(res.find((r) => r.sourceId === 'D3')?.action).toBe('updated');
-    const [row] = await rows<{ n: string }>(
-      pgc,
-      "select count(*) as n from smb.audit_log where action = 'source.update' and target_id = 'D3'",
-    );
-    expect(Number(row!.n)).toBe(1);
+    expect(res.filter((r) => r.action !== 'unchanged').map((r) => r.sourceId)).toEqual(['D3']);
+    expect(await d3Updates()).toBe(before + 1);
   });
 });
 
