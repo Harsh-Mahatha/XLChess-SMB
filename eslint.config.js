@@ -3,7 +3,15 @@ import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', 'apps/api/prisma/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      'apps/api/prisma/**',
+      'supabase/.temp/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,

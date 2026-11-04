@@ -1,5 +1,3 @@
-// Introspected from the Supabase `smb` schema via `npm run db:pull`.
-// Do NOT hand-edit models and NEVER run `prisma migrate`: SQL in /supabase/migrations is the source of truth.
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["multiSchema"]
@@ -10,4 +8,559 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
   schemas   = ["smb"]
+}
+
+model audit_log {
+  id          BigInt   @id @default(autoincrement())
+  actor       String
+  action      String
+  target_type String?
+  target_id   String?
+  details     Json     @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([actor, created_at(sort: Desc)], map: "audit_log_actor_time")
+  @@index([target_type, target_id], map: "audit_log_target")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model data_sources {
+  id             String           @id
+  kind           String
+  name           String
+  base_url       String?
+  terms_url      String?
+  enabled        Boolean          @default(true)
+  config         Json             @default("{}")
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime         @default(now()) @db.Timestamptz(6)
+  media_assets   media_assets[]
+  source_records source_records[]
+
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model jobs {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lane                 job_lane
+  kind                 String
+  status               job_status             @default(queued)
+  priority             Int                    @default(100)
+  payload              Json                   @default("{}")
+  payload_version      Int                    @default(1)
+  result               Json?
+  opportunity_id       String?                @db.Uuid
+  attempts             Int                    @default(0)
+  max_attempts         Int                    @default(3)
+  lease_id             String?                @db.Uuid
+  leased_by            String?                @db.Uuid
+  lease_expires_at     DateTime?              @db.Timestamptz(6)
+  run_after            DateTime               @default(now()) @db.Timestamptz(6)
+  not_after            DateTime?              @db.Timestamptz(6)
+  idempotency_key      String?                @unique
+  last_error           String?
+  payload_purged_at    DateTime?              @db.Timestamptz(6)
+  started_at           DateTime?              @db.Timestamptz(6)
+  finished_at          DateTime?              @db.Timestamptz(6)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  post_opportunities   post_opportunities?    @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "jobs_opportunity_fk")
+  media_assets         media_assets[]
+  opportunity_events   opportunity_events[]
+  post_candidates      post_candidates[]
+  publication_attempts publication_attempts[]
+  research_packages    research_packages[]
+
+  @@index([opportunity_id], map: "jobs_opportunity")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model media_assets {
+  id                                                            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind                                                          asset_kind
+  bucket                                                        String
+  path                                                          String
+  sha256                                                        String
+  mime                                                          String
+  size_bytes                                                    BigInt?
+  width                                                         Int?
+  height                                                        Int?
+  source_url                                                    String?
+  source_page_url                                               String?
+  image_source_id                                               String?
+  parent_asset_id                                               String?             @db.Uuid
+  transform                                                     Json?
+  template_version                                              String?
+  opportunity_id                                                String?             @db.Uuid
+  job_id                                                        String?             @db.Uuid
+  retention_until                                               DateTime?           @db.Timestamptz(6)
+  deleted_at                                                    DateTime?           @db.Timestamptz(6)
+  created_at                                                    DateTime            @default(now()) @db.Timestamptz(6)
+  data_sources                                                  data_sources?       @relation(fields: [image_source_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  jobs                                                          jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities                                            post_opportunities? @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  media_assets                                                  media_assets?       @relation("media_assetsTomedia_assets", fields: [parent_asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_media_assets                                            media_assets[]      @relation("media_assetsTomedia_assets")
+  media_licenses_media_licenses_asset_idTomedia_assets          media_licenses[]    @relation("media_licenses_asset_idTomedia_assets")
+  media_licenses_media_licenses_evidence_asset_idTomedia_assets media_licenses[]    @relation("media_licenses_evidence_asset_idTomedia_assets")
+  revision_assets                                               revision_assets[]
+
+  @@unique([bucket, path])
+  @@index([parent_asset_id], map: "media_assets_parent")
+  @@index([sha256], map: "media_assets_sha256")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model media_licenses {
+  id                                                          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  asset_id                                                    String           @db.Uuid
+  original_url                                                String
+  source_page_url                                             String?
+  photographer                                                String?
+  copyright_holder                                            String?
+  licence_type                                                String
+  licence_version                                             String?
+  licence_url                                                 String?
+  commercial_use_allowed                                      Boolean
+  modifications_allowed                                       Boolean
+  attribution_required                                        Boolean
+  attribution_text                                            String?
+  share_alike                                                 Boolean          @default(false)
+  other_obligations                                           String?
+  evidence_asset_id                                           String?          @db.Uuid
+  evidence_note                                               String?
+  decision                                                    licence_decision
+  decision_reason                                             String?
+  verified_at                                                 DateTime         @db.Timestamptz(6)
+  verified_by                                                 String
+  created_at                                                  DateTime         @default(now()) @db.Timestamptz(6)
+  media_assets_media_licenses_asset_idTomedia_assets          media_assets     @relation("media_licenses_asset_idTomedia_assets", fields: [asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  media_assets_media_licenses_evidence_asset_idTomedia_assets media_assets?    @relation("media_licenses_evidence_asset_idTomedia_assets", fields: [evidence_asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([asset_id], map: "media_licenses_asset")
+  @@schema("smb")
+}
+
+model opportunity_events {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  seq                BigInt              @default(autoincrement())
+  opportunity_id     String              @db.Uuid
+  from_status        opportunity_status?
+  to_status          opportunity_status
+  actor              String              @default("system")
+  reason             String?
+  job_id             String?             @db.Uuid
+  created_at         DateTime            @default(now()) @db.Timestamptz(6)
+  jobs               jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities post_opportunities  @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([opportunity_id, seq], map: "opportunity_events_opportunity")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model post_candidates {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunity_id      String             @db.Uuid
+  research_package_id String             @db.Uuid
+  generation_cycle    Int                @default(1)
+  slot                String
+  angle               String?
+  provider            String
+  model               String?
+  prompt_version      String
+  job_id              String?            @db.Uuid
+  created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  jobs                jobs?              @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities  post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  research_packages   research_packages  @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_revisions      post_revisions[]
+  review_actions      review_actions[]
+
+  @@unique([opportunity_id, generation_cycle, slot])
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model post_configs {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_type_id       String
+  version            Int
+  config_json        Json
+  content_hash       String
+  origin             String
+  is_active          Boolean              @default(false)
+  created_by         String?
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  file_hash          String
+  override           Json?
+  post_types         post_types           @relation(fields: [post_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities post_opportunities[]
+
+  @@unique([post_type_id, version])
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model post_metrics {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subject_type String
+  subject_id   String?  @db.Uuid
+  metric       String
+  value        Decimal  @db.Decimal
+  unit         String?
+  dimensions   Json     @default("{}")
+  measured_at  DateTime @default(now()) @db.Timestamptz(6)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([metric, measured_at(sort: Desc)], map: "post_metrics_metric_time")
+  @@index([subject_type, subject_id, metric], map: "post_metrics_subject")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model post_opportunities {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_type_id       String
+  post_config_id     String               @db.Uuid
+  dedupe_key         String               @unique
+  trigger_kind       String
+  trigger_ref        Json                 @default("{}")
+  phase              String?
+  status             opportunity_status   @default(pending)
+  priority           Int                  @default(100)
+  scheduled_for      DateTime?            @db.Timestamptz(6)
+  not_after          DateTime?            @db.Timestamptz(6)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  jobs               jobs[]
+  media_assets       media_assets[]
+  opportunity_events opportunity_events[]
+  post_candidates    post_candidates[]
+  post_configs       post_configs         @relation(fields: [post_config_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_types         post_types           @relation(fields: [post_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  research_packages  research_packages[]
+  review_actions     review_actions[]
+
+  @@index([status, scheduled_for], map: "post_opportunities_status")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model post_revisions {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  candidate_id         String            @db.Uuid
+  revision_no          Int
+  parent_revision_id   String?           @db.Uuid
+  caption              String
+  channel_texts        Json              @default("{}")
+  template_version     String?
+  content_hash         String
+  author_kind          String
+  author_id            String?
+  change_note          String?
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  post_candidates      post_candidates   @relation(fields: [candidate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_revisions       post_revisions?   @relation("post_revisionsTopost_revisions", fields: [parent_revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_post_revisions post_revisions[]  @relation("post_revisionsTopost_revisions")
+  publications         publications[]
+  review_actions       review_actions[]
+  revision_assets      revision_assets[]
+  revision_claims      revision_claims[]
+
+  @@unique([candidate_id, revision_no])
+  @@index([content_hash], map: "post_revisions_hash")
+  @@schema("smb")
+}
+
+model post_types {
+  id                 String               @id
+  name               String
+  description        String?
+  enabled            Boolean              @default(true)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  post_configs       post_configs[]
+  post_opportunities post_opportunities[]
+
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model publication_attempts {
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publication_id   String       @db.Uuid
+  attempt_no       Int
+  outcome          String
+  request_summary  Json         @default("{}")
+  response_summary Json         @default("{}")
+  error            String?
+  job_id           String?      @db.Uuid
+  started_at       DateTime     @default(now()) @db.Timestamptz(6)
+  finished_at      DateTime     @default(now()) @db.Timestamptz(6)
+  jobs             jobs?        @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  publications     publications @relation(fields: [publication_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([publication_id, attempt_no])
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model publications {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  approval_id          String                 @db.Uuid
+  revision_id          String                 @db.Uuid
+  channel              channel
+  mode                 publish_mode
+  status               publication_status     @default(pending)
+  content_hash         String
+  idempotency_key      String                 @unique
+  scheduled_for        DateTime?              @db.Timestamptz(6)
+  external_id          String?
+  url                  String?
+  published_at         DateTime?              @db.Timestamptz(6)
+  last_error           String?
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  publication_attempts publication_attempts[]
+  review_actions       review_actions         @relation(fields: [approval_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_revisions       post_revisions         @relation(fields: [revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([approval_id, channel])
+  @@index([revision_id], map: "publications_revision")
+  @@index([status, scheduled_for], map: "publications_status")
+  @@schema("smb")
+}
+
+model research_claim_sources {
+  claim_id         String          @db.Uuid
+  source_record_id String          @db.Uuid
+  research_claims  research_claims @relation(fields: [claim_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  source_records   source_records  @relation(fields: [source_record_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([claim_id, source_record_id])
+  @@index([source_record_id], map: "research_claim_sources_record")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model research_claims {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  package_id             String                   @db.Uuid
+  claim_key              String
+  description            String
+  value                  Json
+  computed               Boolean                  @default(false)
+  computation            String?
+  verification           claim_verification       @default(unverified)
+  confidence             Decimal?                 @db.Decimal(3, 2)
+  event_time             DateTime?                @db.Timestamptz(6)
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  research_claim_sources research_claim_sources[]
+  research_packages      research_packages        @relation(fields: [package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  revision_claims        revision_claims[]
+
+  @@unique([package_id, claim_key])
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model research_packages {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunity_id     String             @db.Uuid
+  version            Int
+  status             String             @default("building")
+  summary            Json               @default("{}")
+  content_hash       String?
+  job_id             String?            @db.Uuid
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
+  post_candidates    post_candidates[]
+  research_claims    research_claims[]
+  jobs               jobs?              @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([opportunity_id, version])
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model retention_policies {
+  subject     String   @id
+  keep_days   Int
+  enabled     Boolean  @default(true)
+  description String
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model review_actions {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunity_id     String             @db.Uuid
+  candidate_id       String?            @db.Uuid
+  revision_id        String?            @db.Uuid
+  action             review_action_type
+  content_hash       String?
+  reviewer_id        String
+  channels           channel[]          @default([])
+  scheduled_for      DateTime?          @db.Timestamptz(6)
+  feedback           String?
+  feedback_tags      String[]           @default([])
+  idempotency_key    String?            @unique
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
+  publications       publications[]
+  post_candidates    post_candidates?   @relation(fields: [candidate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_revisions     post_revisions?    @relation(fields: [revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([opportunity_id, created_at], map: "review_actions_opportunity")
+  @@index([revision_id], map: "review_actions_revision")
+  @@schema("smb")
+}
+
+model revision_assets {
+  revision_id    String         @db.Uuid
+  asset_id       String         @db.Uuid
+  role           String         @default("image")
+  media_assets   media_assets   @relation(fields: [asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_revisions post_revisions @relation(fields: [revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([revision_id, asset_id])
+  @@index([asset_id], map: "revision_assets_asset")
+  @@schema("smb")
+}
+
+model revision_claims {
+  revision_id     String          @db.Uuid
+  claim_id        String          @db.Uuid
+  research_claims research_claims @relation(fields: [claim_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_revisions  post_revisions  @relation(fields: [revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([revision_id, claim_id])
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model source_records {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source_id              String
+  url                    String
+  retrieved_at           DateTime                 @db.Timestamptz(6)
+  event_time             DateTime?                @db.Timestamptz(6)
+  adapter_version        String?
+  raw_payload            Json?
+  payload_hash           String
+  normalised             Json
+  raw_purged_at          DateTime?                @db.Timestamptz(6)
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  research_claim_sources research_claim_sources[]
+  data_sources           data_sources             @relation(fields: [source_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([source_id, retrieved_at(sort: Desc)], map: "source_records_source_retrieved")
+  @@schema("smb")
+}
+
+enum asset_kind {
+  original
+  derived
+  render
+  evidence
+
+  @@schema("smb")
+}
+
+enum channel {
+  x
+  facebook
+  instagram
+  discord
+
+  @@schema("smb")
+}
+
+enum claim_verification {
+  unverified
+  single_source
+  verified
+  conflicting
+
+  @@schema("smb")
+}
+
+enum job_lane {
+  server
+  gpu
+
+  @@schema("smb")
+}
+
+enum job_status {
+  queued
+  leased
+  succeeded
+  failed
+  dead
+  cancelled
+  expired
+
+  @@schema("smb")
+}
+
+enum licence_decision {
+  accepted
+  rejected
+
+  @@schema("smb")
+}
+
+enum opportunity_status {
+  pending
+  researching
+  generating
+  awaiting_review
+  approved
+  scheduled
+  publishing
+  published
+  partially_published
+  rejected
+  deferred
+  failed
+
+  @@schema("smb")
+}
+
+enum publication_status {
+  pending
+  publishing
+  published
+  dry_run_recorded
+  failed
+  cancelled
+
+  @@schema("smb")
+}
+
+enum publish_mode {
+  dry_run
+  sandbox
+  live
+
+  @@schema("smb")
+}
+
+enum review_action_type {
+  approve
+  reject
+  defer
+  regenerate
+  request_research
+  comment
+
+  @@schema("smb")
 }

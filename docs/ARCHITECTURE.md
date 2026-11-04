@@ -307,7 +307,85 @@ Phase 4 acceptance includes **recreating the Gukesh–Sindarov trial post** from
 
 Immediate next steps after this design is approved:
 1. Scaffold the monorepo (npm workspaces, TS config, Express app with health and OpenAPI, shared package, Vitest, lint) and set up the Supabase CLI.
-2. 1.2: write the `smb` schema migrations, then `prisma db pull`.
+2. 1.2: write the `smb` schema migrations, then `prisma db pull` (done, see section 13).
+
+---
+
+## 13. Database schema and provenance (Module 1.2)
+
+Migrations are in `supabase/migrations/`, dev fixtures in `supabase/seed.sql`, and the tests in `tests/integration/db/` (`npm run test:integration`, needs Docker or `SMB_TEST_DATABASE_URL`).
+
+### Tables
+
+| Area | Tables |
+|---|---|
+| Configuration and sources | `post_types`, `post_configs` (versioned, immutable, one active per type), `data_sources` (data `D*` and image `I*`), `source_records` |
+| Work | `post_opportunities` (pinned to an exact `post_configs` row), `opportunity_events` (status history), `jobs` |
+| Research | `research_packages`, `research_claims`, `research_claim_sources` (claim to source record, many to many) |
+| Content | `post_candidates` (slots A/B/C per generation cycle), `post_revisions` (immutable, hashed), `revision_claims`, `revision_assets` |
+| Media | `media_assets` (original, derived, render, evidence), `media_licenses` |
+| Review and publishing | `review_actions`, `publications` (one row per approval and channel), `publication_attempts` |
+| Operations | `post_metrics`, `audit_log`, `retention_policies` |
+
+`post_revisions` is not in the guide's table list, but "one candidate can have multiple revisions" needs it.
+
+### Rules enforced by the database
+- **Append-only history.** Revisions, review actions, claims, licences, status events, candidates, attempts, metrics and the audit log cannot be updated or deleted (`smb.immutable_except()`). A few columns stay writable: publication status fields, `media_assets.deleted_at`, `source_records.raw_payload`, and `post_configs.is_active`.
+- **Approval binding.** An `approve` action must carry the exact `content_hash` of its revision, and a publication must match its approval's revision, hash and approved channel. Changing the text after review therefore cannot be published under the old approval.
+- **Image provenance.** An original has a source URL and image source. A derived asset has a parent and a transform. A render has a template version. An accepted licence must allow commercial use and have a licence URL or saved evidence.
+- **Status history.** A trigger writes `opportunity_events` on every status change. Set `smb.actor`, `smb.reason` and `smb.job_id` with `set_config(..., true)` inside the transaction to record who and why.
+- **No client access.** `anon` and `authenticated` have no privileges on the `smb` schema.
+
+### Tracing a post
+`smb.publication_provenance` returns, per publication: the approval and reviewer, the revision (number, author, hash), the generation (provider, model, prompt version, job), the exact config version, the research package, every cited claim with its source URL, retrieval time and payload hash, every asset with its original photo, source URL and licence, and the status history.
+
+### Retention (`smb.apply_retention(now)`)
+Defaults live in `smb.retention_policies` and can be edited:
+
+| Subject | Default | Effect |
+|---|---|---|
+| `source_raw_payload` | 90 days | `raw_payload` is cleared. URL, hash and normalised record stay. |
+| `unused_image` | 30 days | Original and derived images that never reached an approved revision get `deleted_at`. |
+| `unused_render` | 30 days | Same for rendered graphics. |
+| `job_payload` | 30 days | Payload and result of finished jobs are cleared. The row stays. |
+
+Anything used by an approved or published revision, its ancestor originals, and licence evidence are never touched. The function only marks rows. Removing the files from Storage and running it on a schedule belong to 1.9 and 1.17.
+
+### Deferred to later modules
+`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), Storage buckets (1.9), and the job runner and lease reaper (1.17).
+
+---
+
+## 14. Post taxonomy and configuration (Module 1.3)
+
+### Files (`/config`)
+
+| File | Purpose |
+|---|---|
+| `taxonomy.json` | The 18 categories and 134 subtypes. A subtype id is `<category>.<n>` in the order of the Feature Definition, so World Championship is `1.1`. Ids are permanent once a config uses them. |
+| `sources.json` | Approved source registry: `D1`–`D5` data, `I1`–`I4` image. Adapter details come with 1.4 and 1.8. |
+| `channels.json` | Per-channel limits and an `enabled` switch. Only X is enabled in V1. A post type may list disabled channels; they are skipped at publish time. |
+| `post-types/<id>-<name>.json` | One file per configured subtype. Only subtypes with a file can run. Files starting with `_` are ignored. |
+
+### Schema
+`PostTypeConfig` in `packages/shared/src/config/schema.ts` has the 15 fields from the guide. Notable rules:
+- `approvalRequired` is the literal `true` and `contentRules.candidateCount` is the literal `3`. They cannot be set to anything else.
+- `schedule` is a list of rules: `weekly`, `daily`, `interval`, `event` (one of the triggers 1.16 can raise) or `manual`.
+- A **phase** can change only its schedule, priority, wording (facts, tone, structure, extra restrictions) and staleness. It cannot touch channels, sources, approval or candidate count, so a phase can never widen what a post type may do. `resolvePhase(config, phaseId)` returns what applies while a phase is active. Deciding which phase is active is 1.15.
+- Unknown fields are rejected everywhere.
+
+### Validation
+`npm run config:validate` checks every file and prints all problems at once. The API runs the same check on start and refuses to boot if it fails. Beyond the schema it checks: unique ids, id exists in the taxonomy, file name starts with the id, every source and channel exists, data and image sources are not mixed up, enabled post types use no disabled source and have at least one enabled channel.
+
+### Versioning and overrides
+- On start, `syncConfigs` compares each file's hash (`canonicalJson`, so key order and formatting do not matter) with the active `post_configs` row. A change inserts the next version and makes it active. Nothing is ever edited in place, and opportunities keep the version they were created with. A database lock makes concurrent starts safe.
+- `config_json` always holds the **effective** config. An operator override is stored as a patch (`override`), with the file it was built on (`file_hash`). Overrides can change only `enabled`, `priority`, `channels` (a subset of the file), `schedule`, and add `contentRules.restrictions`. The merged result is validated in full.
+- When a file changes, a stored override is carried over if it still fits. If not, it is dropped and the sync result says so.
+- Every sync, override and clear writes an `audit_log` row.
+- The HTTP endpoints for overrides arrive with authentication in 1.18. `setOverride`, `clearOverride` and `getActiveConfig` are ready for them.
+
+### Adding a subtype
+Add `config/post-types/<id>-<name>.json` and run `npm run config:validate`. No code changes. `tests/fixtures/config/11.1-on-this-day.json` proves this: a different schedule, timezone and channels load through the same loader.
 
 ---
 

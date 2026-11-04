@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "11.1",
+  "name": "On This Day",
+  "enabled": true,
+  "sources": ["D1", "D4"],
+  "imageSources": ["I1"],
+  "channels": ["x", "discord"],
+  "schedule": [{ "kind": "daily", "time": "08:00" }],
+  "timezone": "Europe/London",
+  "phases": [],
+  "contentRules": {
+    "requiredFacts": ["event.date", "event.description"],
+    "tone": "Friendly and curious.",
+    "structure": ["hook", "what happened", "why it matters"],
+    "restrictions": ["Only use events with a verified date."],
+    "candidateCount": 3
+  },
+  "imageRules": {
+    "need": "preferred",
+    "preferOriginalPhoto": true,
+    "composition": ["Photograph of the person or place, if one can be licensed."]
+  },
+  "approvalRequired": true,
+  "priority": 100,
+  "deduplication": {
+    "keyTemplate": "{postType}:{date}",
+    "windowDays": 365,
+    "similarityThreshold": 0.9
+  },
+  "retryPolicy": {
+    "maxAttempts": 3,
+    "backoffSeconds": 60,
+    "backoffMultiplier": 2,
+    "staleAfterMinutes": 720
+  }
+}

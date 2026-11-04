@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "id": "1.1",
+  "name": "World Championship",
+  "enabled": true,
+  "sources": ["D1", "D2", "D3", "D4", "D5"],
+  "imageSources": ["I1", "I2", "I3", "I4"],
+  "channels": ["x", "facebook", "instagram", "discord"],
+  "schedule": [{ "kind": "weekly", "day": "fri", "time": "09:00" }],
+  "timezone": "UTC",
+  "phases": [
+    {
+      "id": "pre_tournament",
+      "name": "Pre-Tournament",
+      "activation": { "signal": "event_status", "value": "upcoming" }
+    },
+    {
+      "id": "tournament",
+      "name": "During Tournament",
+      "activation": { "signal": "event_status", "value": "in_progress" },
+      "schedule": [{ "kind": "event", "event": "game_completed" }],
+      "priority": 5,
+      "staleAfterMinutes": 360,
+      "contentRules": {
+        "requiredFacts": [
+          "game.result",
+          "match.score",
+          "game.key_moments",
+          "match.situation",
+          "next_game"
+        ],
+        "structure": [
+          "headline result",
+          "updated match score",
+          "key moments",
+          "championship situation",
+          "next game"
+        ]
+      }
+    },
+    {
+      "id": "post_tournament",
+      "name": "Post-Tournament / Next Cycle",
+      "activation": { "signal": "event_status", "value": "completed" },
+      "contentRules": {
+        "requiredFacts": ["event.outcome", "next_cycle.stage"],
+        "structure": ["outcome", "what comes next", "next qualification cycle"]
+      }
+    }
+  ],
+  "contentRules": {
+    "requiredFacts": ["event.name", "event.dates", "event.venue", "participants", "format"],
+    "tone": "Authoritative, factual and engaging for chess fans.",
+    "structure": ["headline", "key facts", "context", "call to action"],
+    "restrictions": [
+      "Every statistic must come from the research package; do not calculate or invent figures.",
+      "Do not state predictions as facts.",
+      "Do not speculate about players' private lives.",
+      "No derogatory language about players, federations or fans."
+    ],
+    "candidateCount": 3
+  },
+  "imageRules": {
+    "need": "preferred",
+    "preferOriginalPhoto": true,
+    "template": "game-result",
+    "composition": [
+      "Use a licensed photograph of the players or venue where one is available.",
+      "Fall back to the template without a photograph if no photograph can be licensed."
+    ]
+  },
+  "approvalRequired": true,
+  "priority": 10,
+  "deduplication": {
+    "keyTemplate": "{postType}:{eventId}:{slot}",
+    "windowDays": 30,
+    "similarityThreshold": 0.85
+  },
+  "retryPolicy": {
+    "maxAttempts": 3,
+    "backoffSeconds": 60,
+    "backoffMultiplier": 2,
+    "staleAfterMinutes": 1440
+  }
+}
