@@ -422,3 +422,45 @@ Code: `apps/api/src/sources/`. Contracts (Zod): `packages/shared/src/sources/`. 
 **Adding a source:** read its API and terms, record the findings in `docs/sources/`, implement `ChessDataSource` for the capabilities it really supports, add it to `ADAPTERS` in `sources/index.ts`, then set `policy.status: approved`, `verifiedAt`, and its `capabilities` and `limits` in `config/sources.json`.
 
 Status in V1 core: **D3 Lichess Broadcasts** is live (events, games). D1, D2, D4 and D5 stay `pending_verification` with no capabilities.
+
+---
+
+## Research packages and fact verification (module 1.5)
+
+Code: `apps/api/src/research/`. Fact catalogue and verification rules: `packages/shared/src/research/`. Tables: `research_packages`, `research_claims`, `research_claim_sources` (module 1.2, unchanged).
+
+**Flow** (`buildResearchPackage(opportunityId)`): load the opportunity's pinned config and phase → read its `requiredFacts` → `gather()` retrieves from each listed source through the gateway (a source that is not approved or has no event reference is skipped and recorded; a failing source is recorded as a failure) → `buildClaims()` makes one claim per required fact → `assemblePackage()` decides the status and hash → `savePackage()` stores a new version in one transaction. The opportunity's `trigger_ref` holds the subject: `{ eventRefs: { D3: "<provider event id>" }, gameRef?: { sourceId, externalId } }`.
+
+**Fact catalogue.** Each fact key a post type may require has a definition (`FACT_CATALOGUE`): whether it is computed, and the weakest verification at which it may be published. An unknown key is reported as missing (`unknown_fact`) instead of being ignored.
+
+**Verification** (`assess()`, pure code, no model):
+
+| Level | Meaning |
+|---|---|
+| `verified` | An official source says it, or two or more independent sources (distinct source ids) agree |
+| `single_source` | One non-official source says it |
+| `conflicting` | Sources disagree and no official source settles it. All values are kept for a human |
+| `unverified` | Nothing says it |
+
+Several records from one source count as one source. An official source can settle a disagreement; the conflict stays in the summary as `resolved`. Confidence is a fixed table (official 0.95, structured feed 0.80, publication 0.60, +0.10 when a second source agrees, 0.30 on conflict).
+
+**Strict publication thresholds.** Results, scores and standings (`game.result`, `match.score`, `match.situation`, `event.outcome`) need `verified`. Descriptive facts (name, dates, venue, format, participants, key moments, next game) accept `single_source`, because a reviewer approves every post. Consequently, while Lichess is the only approved source, a tournament-phase package is stored as `partial` and cannot go to generation. It becomes `complete` when an official source (FIDE) or a second independent source is approved and agrees.
+
+**Computed facts** are calculated by code from the underlying game records, store their formula in `computation`, cite the records of every game they use, and inherit the weakest verification of their inputs: match score, who leads, event outcome, key moments (engine-evaluation swings from `[%eval]`, capped at single-source because the evaluations come from the provider) and participants.
+
+**Game checks.** Every PGN is replayed with `chess.js` (BSD-2). Illegal moves (`pgn_invalid`), or a Result tag that contradicts a checkmate or stalemate (`result_mismatch`), exclude that record, are listed in `summary.issues`, and leave the game `conflicting` if no other record is valid. Resignations, flags and agreed draws cannot be proven from the moves, so those results rest on the source alone.
+
+**Identity.** Players merge by FIDE id first, then by normalised name (accents, case and word order ignored). A name seen with two different FIDE ids is never merged. Games are the same game when round, white and black match.
+
+**Package status.** `failed`: sources were called and none returned data. `complete`: every required fact has a claim at or above its level. `partial`: anything else. `summary` lists `missing` (with reasons: `no_approved_source`, `no_data`, `source_failed`, `not_applicable_yet`, `unknown_fact`), `blocked`, `conflicts`, `sourceErrors`, `skippedSources`, `issues` and the retrieval time range. `content_hash` is the SHA-256 of the claims, their evidence hashes and the open problems, independent of retrieval time and list order.
+
+**Gate.** `assertReadyForGeneration(db, packageId)` throws `ResearchNotReadyError` (with reasons) unless the package is `complete`, every claim still meets its level and every claim has evidence. Generation (1.7) must call it.
+
+**Evidence rule.** A claim is never stored without at least one `research_claim_sources` row; `savePackage` refuses it, and the claims table is append-only.
+
+**Untrusted text.** Names and other strings from a source are stored only inside claim values. They are never used as instructions or placed in claim descriptions.
+
+**Dev tool:** `npm run research:build -- --event <id> [--game <id>] [--phase tournament]` creates a manual opportunity and prints the package.
+
+**Known gaps:** `next_cycle.stage` has no approved source, so any phase requiring it stays `partial`. `participants` lists only players who have appeared in a retrieved game, so it is empty before round 1. Events are not matched across different sources yet; each source needs its own event reference in `eventRefs`.
+
