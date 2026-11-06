@@ -12,7 +12,8 @@
     "db:pull": "prisma db pull && prisma generate",
     "db:generate": "prisma generate",
     "research:build": "tsx --env-file-if-exists=../../.env src/research/cli.ts",
-    "story:select": "tsx --env-file-if-exists=../../.env src/story/cli.ts"
+    "story:select": "tsx --env-file-if-exists=../../.env src/story/cli.ts",
+    "candidates:generate": "tsx --env-file-if-exists=../../.env src/generation/cli.ts"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.0",

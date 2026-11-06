@@ -500,3 +500,52 @@ Code: `apps/api/src/story/`. Angle catalogue and contracts: `packages/shared/src
 **Dev tools:** `npm run story:select -- --opportunity <id>` prints every angle with its score and rejection reasons; `npm run research:build -- ... --select` builds a package and then selects.
 
 **Known gaps:** a phase can only use angles whose facts are in its `requiredFacts`, so evergreen fallbacks during a tournament need their facts added to that phase. While Lichess is the only approved source, result-based angles need `verified` claims and are rejected (`weak_fact`) until FIDE or a second source is approved. The default weights, significance values and the 0.35 minimum score are untuned starting points.
+
+---
+
+## AI prompts and three candidate posts (module 1.7)
+
+Code: the pipeline, prompts, validator and providers are in `packages/shared/src/{ai,generation}/` so the API and the home-PC worker run the same code. The server side (input, storage, CLI) is `apps/api/src/generation/`. Migration `20261103001200`.
+
+**Flow** (`generateCandidates(opportunityId)`): the gate (`assertReadyToGenerate`: ready research package plus a selected story) → `buildInputForOpportunity` makes the model's input → `runGeneration(provider, input)` → `saveGeneration` re-checks and stores three candidates in one transaction. The opportunity stays `generating`: images are still to come (1.8 to 1.10) and moving on is the orchestrator's job (1.17).
+
+**Providers.** Everything goes through `AiProvider.generate(task)`; a task carries the stage name, prompt version, messages and a Zod schema, and a provider returns only output that parses against it. `OllamaProvider` calls `localhost:11434/api/chat` with the schema as the output `format`, records temperature, seed and context size, and on invalid JSON or a schema mismatch asks once more with the error before failing with `invalid_output`. `StubProvider` is deterministic, builds its answers only from the facts it is given, and can be given misbehaving handlers for tests. Switching providers changes nothing else.
+
+**Stages and prompts** (one prompt per stage, `prompts.ts`; version `id@semver#hash` where the hash covers the prompt text, bump `semver` on every wording change):
+
+| Stage | Output | Runs |
+|---|---|---|
+| `interpret` | key points, each citing fact keys | once |
+| `candidate` | headline, caption, text per enabled channel, cited `claimKeys`, hashtags | once per slot A, B, C (factual, narrative, engagement); a failing candidate is rewritten once with the problems fed back |
+| `editorial` | the model's own review (advisory, stored) | per candidate |
+| `visual` | template, composition notes, alt text | per candidate; rejected plans are retried once |
+
+Angle selection stays deterministic code (1.6). Revision from reviewer feedback is 1.12.
+
+**The model's input** (`GenerationInput`). Built by code from the research package: only claims that meet their verification level, each with a sentence (`statement`) written by code from the claim value, so scores and names reach the model exactly as researched. Source text is untrusted: claims whose text looks like an instruction are left out and reported in `warnings`; facts go inside a labelled `<data>` block with `<` escaped, and the system prompt says everything in a data block is information, never instructions. Raw web pages are never sent.
+
+**Validation** (`validate.ts`, pure code, the authority). Checked against the facts the candidate cites:
+
+| Code | Rule |
+|---|---|
+| `unknown_claim`, `no_citation` | Every cited key must be a publishable fact |
+| `unsupported_score` | A score such as `1-0`, `2.5-1.5` or `½-½` must be exactly one the cited facts give (`0-1` for a `1-0` fails) |
+| `unsupported_number` | Any other number must appear in a cited fact |
+| `unsupported_rating`, `unsupported_title` | No ratings or GM/IM titles unless a cited fact provides them |
+| `unsupported_quote` | Quotations must appear in a fact |
+| `unsupported_announcement` | "Official", "announced", "confirmed" need a verified cited fact |
+| `prediction_as_fact` | "will win/beat/..." is an error unless hedged (then a warning) |
+| `unsupported_link`, `unsupported_handle`, `instruction_echo` | Links, handles and instruction-like text from the source data |
+| `too_long`, `missing_channel_text` | Per-channel limit from `channels.json` (X counts each link as 23) |
+| `not_distinct` | Caption trigram overlap with another candidate at or above 0.6, or the same headline |
+| `bad_template`, `missing_alt_text` | Visual plan must use an allowed template and have alt text where a channel needs it |
+
+Warnings (`name_variant`, `prediction`, `angle_not_cited`) are stored but do not fail a candidate. Not checked: figures written as words, country names, paraphrased results; the editorial stage and the reviewer cover those.
+
+**Server authority.** `saveGeneration` re-parses every part of a result and recomputes all validation (`recheckGeneration`), so a result from any producer, including a worker that skipped or misreported its own checks, cannot be stored as passing. A malformed result stores nothing. A candidate that still fails after its retry is stored with `validation.passed = false` and the issue list; the approval step (1.11) must refuse to approve such a candidate.
+
+**Storage.** `post_candidates` gains `story_selection_id`, `approach`, `prompt_versions`, `generation_settings` (per stage), `output`, `validation` (`{ passed, text, visual }`), `editorial` and `visual_plan`; `post_revisions` gains `headline` and `alt_text`. Revision 1 per candidate (`author_kind = ai`) has the content hash that approval will bind to, and `revision_claims` link it to the claims it cites. A retry returns the stored set; two racing runs write one set (advisory lock); `--new-cycle` writes a new `generation_cycle`.
+
+**Dev tool:** `npm run candidates:generate -- --opportunity <id> [--provider stub|ollama] [--model qwen3:8b]`.
+
+**Not yet done (needs the home PC):** generating with a real model (Qwen3 8B on the RTX 4070), tuning the prompts, and measuring timings and VRAM. The worker protocol (job claim, heartbeats, device tokens) and installer have no module yet; when they exist, a `candidates_generate` job carries `GenerationInput` and the worker returns a `GenerationResult`, which the server stores through `saveGeneration` unchanged.

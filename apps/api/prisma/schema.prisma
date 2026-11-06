@@ -176,13 +176,23 @@ model post_candidates {
   prompt_version      String
   job_id              String?            @db.Uuid
   created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  story_selection_id  String?            @db.Uuid
+  approach            String?
+  prompt_versions     Json               @default("{}")
+  generation_settings Json               @default("{}")
+  output              Json?
+  validation          Json?
+  editorial           Json?
+  visual_plan         Json?
   jobs                jobs?              @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities  post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   research_packages   research_packages  @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  story_selections    story_selections?  @relation(fields: [story_selection_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_revisions      post_revisions[]
   review_actions      review_actions[]
 
   @@unique([opportunity_id, generation_cycle, slot])
+  @@index([story_selection_id], map: "post_candidates_story")
   @@schema("smb")
 }
 
@@ -266,6 +276,8 @@ model post_revisions {
   author_id            String?
   change_note          String?
   created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  headline             String?
+  alt_text             String?
   post_candidates      post_candidates   @relation(fields: [candidate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_revisions       post_revisions?   @relation("post_revisionsTopost_revisions", fields: [parent_revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   other_post_revisions post_revisions[]  @relation("post_revisionsTopost_revisions")
@@ -486,6 +498,7 @@ model story_selections {
   jobs                jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities  post_opportunities  @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   research_packages   research_packages   @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_candidates     post_candidates[]
 
   @@unique([opportunity_id, research_package_id])
   @@index([created_at(sort: Desc)], map: "story_selections_recent")
