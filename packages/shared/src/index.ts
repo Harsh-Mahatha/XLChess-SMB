@@ -5,3 +5,5 @@ export * from './api/index.js';
 export * from './sources/index.js';
 export * from './research/index.js';
 export * from './story/index.js';
+export * from './ai/index.js';
+export * from './generation/index.js';
