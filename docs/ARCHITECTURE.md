@@ -464,3 +464,39 @@ Several records from one source count as one source. An official source can sett
 
 **Known gaps:** `next_cycle.stage` has no approved source, so any phase requiring it stays `partial`. `participants` lists only players who have appeared in a retrieved game, so it is empty before round 1. Events are not matched across different sources yet; each source needs its own event reference in `eventRefs`.
 
+
+---
+
+## Story selection and content deduplication (module 1.6)
+
+Code: `apps/api/src/story/`. Angle catalogue and contracts: `packages/shared/src/story/`. Table: `story_selections` (migration `20261103001100`).
+
+**Flow** (`selectStory(opportunityId)`): load the opportunity's newest `complete` or `partial` research package → `rankStories()` scores every angle against its claims and the recent history → the decision and the full ranking are stored in `story_selections` → the opportunity moves to `generating` (a story was chosen) or `skipped` (no worthwhile post). It all runs in one transaction under a per-post-type advisory lock, so two opportunities selecting at once cannot take the same story. A retried step returns the stored answer (`unique (opportunity_id, research_package_id)`). Selection is deterministic code on the `server` lane; no model is involved. Module 1.7 may re-rank the top few eligible angles, but only among angles code has already allowed.
+
+**Angles** (`ANGLE_CATALOGUE`). An angle names the facts it needs, the phases it is made for, a base significance and the features that say what the story is about. Evidence in the package adjusts significance (a decisive result beats a draw, a large evaluation swing, a lead with few rounds left). In use: `game_result`, `decisive_moment`, `match_standing`, `match_clinched`, `next_game_preview` (tournament); `event_intro`, `players_intro`, `format_explainer`, `schedule_countdown` (before it); `outcome`, `next_cycle` (after it). `rating_movement` is listed and always rejected as `unsupported` until an approved source provides ratings. Evergreen angles (`event_intro`, `players_intro`, `format_explainer`) may be used outside their phase at half relevance.
+
+**Gates** (an angle failing any of these is rejected with a coded reason):
+
+| Code | Meaning |
+|---|---|
+| `unsupported` / `disabled` | No evidence source exists yet / not in `storySelection.angles` |
+| `wrong_phase` | Made for another phase and not evergreen |
+| `missing_fact` / `weak_fact` | A required claim is absent, or below its `FACT_CATALOGUE` verification level (conflicting never passes) |
+| `not_applicable` | The evidence does not support the story (no leader, lead not yet decisive, no swing) |
+| `stale` | Newest evidence older than the phase's `staleAfterMinutes` (evergreen angles are exempt) |
+| `duplicate` / `repetitive` | Identical fingerprint to a recent post, or Jaccard similarity of features at or above `deduplication.similarityThreshold` |
+| `below_minimum` | Score under `storySelection.minScore` (default 0.35) |
+
+**Score** = weighted significance (0.35), timeliness (0.25), novelty (0.20, `1 - highest similarity to history`), relevance (0.10) and channel suitability (0.10), normalised to 0..1. Override weights, the minimum score and the angle allow-list per post type with the optional `storySelection` block (all values validated; unknown angle ids are refused).
+
+**Deduplication.** History is the post type's selections within `deduplication.windowDays` whose opportunity is generating, in review, approved, scheduled, publishing or published. A rejected, deferred, skipped or failed opportunity frees its story. Same angle about a different game, or after a meaningful change (new leader, new margin), is allowed; the same game or standing again is not. Caption-level duplicate checking before publishing is module 1.13.
+
+**No worthwhile post.** If nothing is eligible, the outcome is `no_worthwhile_post` and the opportunity becomes `skipped` (a new `opportunity_status`, distinct from `failed` and `rejected`). SMB never invents a development to fill a slot.
+
+**Reasons.** `story_selections.reason` is the plain-language explanation; `ranking` holds, for every angle, the score breakdown, rejection codes with messages, features and the most similar earlier post. `publication_provenance` now carries `story_angle_id`, `story_score`, `story_reason` and `story_selector_version`. `SELECTOR_VERSION` changes whenever scoring or eligibility rules do.
+
+**Gate for generation.** `assertReadyToGenerate(db, packageId)` runs `assertReadyForGeneration` and then requires a `selected` story for the package; it returns the angle to write about (1.7 stores it in `post_candidates.angle`).
+
+**Dev tools:** `npm run story:select -- --opportunity <id>` prints every angle with its score and rejection reasons; `npm run research:build -- ... --select` builds a package and then selects.
+
+**Known gaps:** a phase can only use angles whose facts are in its `requiredFacts`, so evergreen fallbacks during a tournament need their facts added to that phase. While Lichess is the only approved source, result-based angles need `verified` claims and are rejected (`weak_fact`) until FIDE or a second source is approved. The default weights, significance values and the 0.35 minimum score are untuned starting points.
