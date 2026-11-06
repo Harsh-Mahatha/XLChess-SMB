@@ -1,19 +1,89 @@
 import { z } from 'zod';
 import { Channel } from '../domain/index.js';
 
-/** config/sources.json: the approved source registry. Adapter details live with modules 1.4 and 1.8. */
-export const SourceEntry = z
+/** What a data source adapter can be asked for. Mirrors the ChessDataSource methods. */
+export const SourceCapability = z.enum(['events', 'players', 'games', 'news']);
+export type SourceCapability = z.infer<typeof SourceCapability>;
+
+/** Reliability hierarchy from the development guide (2.3 Source reliability), most to least trusted. */
+export const SourceReliability = z.enum([
+  'official',
+  'structured_feed',
+  'publication',
+  'unverified',
+]);
+export type SourceReliability = z.infer<typeof SourceReliability>;
+
+const Url = z.string().url();
+
+export const SourceAccess = z
   .object({
-    id: z.string().regex(/^[DI]\d+$/),
-    kind: z.enum(['data', 'image']),
+    method: z.enum(['api', 'file_download', 'rss', 'none']),
+    baseUrl: Url.optional(),
+    auth: z.enum(['none', 'token']),
+    termsUrl: Url.optional(),
+  })
+  .strict();
+
+/**
+ * Usage policy. A source is `approved` only after someone read its API, limits and licence terms
+ * (docs/sources/). Everything else fails closed: no capabilities, no automated retrieval.
+ */
+export const SourcePolicy = z
+  .object({
+    status: z.enum(['approved', 'pending_verification', 'blocked']),
+    /** ISO date (YYYY-MM-DD) when the terms were last checked. */
+    verifiedAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    automatedRetrieval: z.boolean(),
+    attributionRequired: z.boolean(),
+    notes: z.string().optional(),
+  })
+  .strict();
+
+export const SourceLimits = z
+  .object({
+    maxConcurrent: z.number().int().positive(),
+    minIntervalMs: z.number().int().min(0),
+    /** Pause applied after HTTP 429 when the provider sends no Retry-After. */
+    rateLimitBackoffMs: z.number().int().positive(),
+    timeoutMs: z.number().int().positive(),
+    maxRetries: z.number().int().min(0).max(5),
+    /** Per-capability cache lifetime. A capability missing here is not cached. */
+    cacheTtlSeconds: z.record(SourceCapability, z.number().int().min(0)).default({}),
+  })
+  .strict();
+export type SourceLimits = z.infer<typeof SourceLimits>;
+
+const DataSourceFields = z
+  .object({
+    id: z.string().regex(/^D\d+$/),
+    kind: z.literal('data'),
+    name: z.string().min(1),
+    enabled: z.boolean(),
+    reliability: SourceReliability,
+    access: SourceAccess,
+    policy: SourcePolicy,
+    capabilities: z.array(SourceCapability),
+    limits: SourceLimits,
+  })
+  .strict();
+export type DataSourceEntry = z.infer<typeof DataSourceFields>;
+
+/** Image sources keep the minimal shape until module 1.8 extends them. */
+const ImageSourceFields = z
+  .object({
+    id: z.string().regex(/^I\d+$/),
+    kind: z.literal('image'),
     name: z.string().min(1),
     enabled: z.boolean(),
   })
-  .strict()
-  .refine(
-    (s) => s.id.startsWith(s.kind === 'data' ? 'D' : 'I'),
-    'D ids are data sources and I ids are image sources',
-  );
+  .strict();
+
+export const SourceEntry = z.discriminatedUnion('kind', [DataSourceFields, ImageSourceFields]);
+export type SourceEntry = z.infer<typeof SourceEntry>;
 
 export const SourcesRegistry = z
   .object({
@@ -21,10 +91,30 @@ export const SourcesRegistry = z
     sources: z.array(SourceEntry).min(1),
   })
   .strict()
-  .refine(
-    (r) => new Set(r.sources.map((s) => s.id)).size === r.sources.length,
-    'source ids must be unique',
-  );
+  .superRefine((r, ctx) => {
+    if (new Set(r.sources.map((s) => s.id)).size !== r.sources.length) {
+      ctx.addIssue({ code: 'custom', message: 'source ids must be unique' });
+    }
+    for (const s of r.sources) {
+      if (s.kind !== 'data') continue;
+      const bad = (msg: string) => ctx.addIssue({ code: 'custom', message: `${s.id}: ${msg}` });
+      if (new Set(s.capabilities).size !== s.capabilities.length) bad('duplicate capability');
+      if (s.capabilities.length > 0) {
+        if (s.policy.status !== 'approved') bad('capabilities require policy.status "approved"');
+        if (!s.policy.automatedRetrieval) bad('capabilities require policy.automatedRetrieval');
+        if (s.access.method === 'none') bad('capabilities require an access method');
+      }
+      if (s.policy.status === 'approved') {
+        if (s.reliability === 'unverified') bad('an unverified source cannot be approved');
+        if (!s.policy.verifiedAt) bad('an approved source needs policy.verifiedAt');
+        if (!s.access.termsUrl) bad('an approved source needs access.termsUrl');
+      }
+      if (s.policy.automatedRetrieval && s.policy.status !== 'approved') {
+        bad('automatedRetrieval requires policy.status "approved"');
+      }
+      if (s.access.method !== 'none' && !s.access.baseUrl) bad('access.baseUrl is required');
+    }
+  });
 export type SourcesRegistry = z.infer<typeof SourcesRegistry>;
 
 /** config/channels.json: what each channel can carry, and whether publishing to it is switched on. */

@@ -107,12 +107,16 @@ XLChess-SMB/
 The **orchestrator** only moves an opportunity through states and enqueues the next step. All domain work sits behind these interfaces, and new post types, sources and channels are added by **implementing an interface plus configuration**.
 
 ```ts
-// Source adapters (1.4): retrieve and normalise approved data
-interface SourceAdapter {
-  id: string;                                   // e.g. "D1" / "fide"
-  fetch(req: SourceRequest): Promise<RawRecord[]>;
-  normalise(raw: RawRecord): SourceRecord;      // with url, retrievedAt, eventTime
+// Source adapters (1.4): one adapter per approved provider, behind SourceGateway
+interface ChessDataSource {
+  id: string;                                   // "D3"
+  adapterVersion: string;
+  fetchEvents?(q: EventQuery, ctx): Promise<RawItem<ChessEvent>[]>;   // only what the provider supports
+  fetchPlayers?(q: PlayerQuery, ctx): Promise<RawItem<ChessPlayer>[]>;
+  fetchGames?(q: GameQuery, ctx): Promise<RawItem<ChessGame>[]>;
+  fetchNews?(q: NewsQuery, ctx): Promise<RawItem<ChessNews>[]>;
 }
+// The rest of SMB calls only: gateway.fetch(sourceId, capability, query) -> Sourced<T>[] (data + provenance)
 
 // AI provider (1.7): implemented by the worker (Ollama) and by StubProvider
 interface AiProvider {
@@ -363,7 +367,7 @@ Anything used by an approved or published revision, its ancestor originals, and 
 | File | Purpose |
 |---|---|
 | `taxonomy.json` | The 18 categories and 134 subtypes. A subtype id is `<category>.<n>` in the order of the Feature Definition, so World Championship is `1.1`. Ids are permanent once a config uses them. |
-| `sources.json` | Approved source registry: `D1`–`D5` data, `I1`–`I4` image. Adapter details come with 1.4 and 1.8. |
+| `sources.json` | Approved source registry: `D1`–`D5` data, `I1`–`I4` image. A data source carries its reliability level, access method, usage policy (`approved` / `pending_verification` / `blocked`), capabilities and rate/cache limits (1.4). Image-source details come with 1.8. |
 | `channels.json` | Per-channel limits and an `enabled` switch. Only X is enabled in V1. A post type may list disabled channels; they are skipped at publish time. |
 | `post-types/<id>-<name>.json` | One file per configured subtype. Only subtypes with a file can run. Files starting with `_` are ignored. |
 
@@ -399,3 +403,64 @@ Add `config/post-types/<id>-<name>.json` and run `npm run config:validate`. No c
 6. **Windows 10 end of support**: a security assessment and an OS migration path go in the 1.21 docs.
 7. **Gukesh–Sindarov trial post**: I need the post and its original assets for the Phase 4 acceptance test.
 8. **Known doc conflicts** (README): "5 posts/day" in 1.22 against the guide's "no fixed quota", and the undefined "15 V1 acceptance conditions" in 1.20.
+
+---
+
+## Source adapters (module 1.4)
+
+Code: `apps/api/src/sources/`. Contracts (Zod): `packages/shared/src/sources/`. Provider notes: `docs/sources/`.
+
+**Request path** for `SourceGateway.fetch(sourceId, capability, query)`:
+1. Registry checks, failing with a typed `SourceError`: `source_not_registered` → `source_disabled` → `source_not_approved` (policy must be `approved` with automated retrieval on) → `unsupported_capability` (must be listed in `config/sources.json` **and** implemented by the adapter) → `invalid_query`.
+2. In-memory TTL cache (per source and capability, from `limits.cacheTtlSeconds`). Failures are never cached.
+3. Adapter call through a per-source HTTP client: timeout, retries with backoff and jitter on network errors and 5xx, a source-wide pause on 429 (honours `Retry-After`, never shorter than `rateLimitBackoffMs`), and a limiter for max concurrency and minimum interval.
+4. Every normalised item is validated against its Zod schema (`invalid_response` if not), hashed (SHA-256 of the raw payload) and saved to `smb.source_records`. An unchanged payload reuses the existing row.
+5. The caller gets `Sourced<T>`: the data plus `provenance` (`recordId`, URL, retrieval time, adapter version, payload hash), which research (1.5) cites for each claim.
+
+**Fail closed.** A source with `pending_verification` status has no capabilities, and the registry schema refuses capabilities on an unapproved source. A declared capability with no adapter code stops API startup. A provider failure is always thrown, never returned as an empty result.
+
+**Adding a source:** read its API and terms, record the findings in `docs/sources/`, implement `ChessDataSource` for the capabilities it really supports, add it to `ADAPTERS` in `sources/index.ts`, then set `policy.status: approved`, `verifiedAt`, and its `capabilities` and `limits` in `config/sources.json`.
+
+Status in V1 core: **D3 Lichess Broadcasts** is live (events, games). D1, D2, D4 and D5 stay `pending_verification` with no capabilities.
+
+---
+
+## Research packages and fact verification (module 1.5)
+
+Code: `apps/api/src/research/`. Fact catalogue and verification rules: `packages/shared/src/research/`. Tables: `research_packages`, `research_claims`, `research_claim_sources` (module 1.2, unchanged).
+
+**Flow** (`buildResearchPackage(opportunityId)`): load the opportunity's pinned config and phase → read its `requiredFacts` → `gather()` retrieves from each listed source through the gateway (a source that is not approved or has no event reference is skipped and recorded; a failing source is recorded as a failure) → `buildClaims()` makes one claim per required fact → `assemblePackage()` decides the status and hash → `savePackage()` stores a new version in one transaction. The opportunity's `trigger_ref` holds the subject: `{ eventRefs: { D3: "<provider event id>" }, gameRef?: { sourceId, externalId } }`.
+
+**Fact catalogue.** Each fact key a post type may require has a definition (`FACT_CATALOGUE`): whether it is computed, and the weakest verification at which it may be published. An unknown key is reported as missing (`unknown_fact`) instead of being ignored.
+
+**Verification** (`assess()`, pure code, no model):
+
+| Level | Meaning |
+|---|---|
+| `verified` | An official source says it, or two or more independent sources (distinct source ids) agree |
+| `single_source` | One non-official source says it |
+| `conflicting` | Sources disagree and no official source settles it. All values are kept for a human |
+| `unverified` | Nothing says it |
+
+Several records from one source count as one source. An official source can settle a disagreement; the conflict stays in the summary as `resolved`. Confidence is a fixed table (official 0.95, structured feed 0.80, publication 0.60, +0.10 when a second source agrees, 0.30 on conflict).
+
+**Strict publication thresholds.** Results, scores and standings (`game.result`, `match.score`, `match.situation`, `event.outcome`) need `verified`. Descriptive facts (name, dates, venue, format, participants, key moments, next game) accept `single_source`, because a reviewer approves every post. Consequently, while Lichess is the only approved source, a tournament-phase package is stored as `partial` and cannot go to generation. It becomes `complete` when an official source (FIDE) or a second independent source is approved and agrees.
+
+**Computed facts** are calculated by code from the underlying game records, store their formula in `computation`, cite the records of every game they use, and inherit the weakest verification of their inputs: match score, who leads, event outcome, key moments (engine-evaluation swings from `[%eval]`, capped at single-source because the evaluations come from the provider) and participants.
+
+**Game checks.** Every PGN is replayed with `chess.js` (BSD-2). Illegal moves (`pgn_invalid`), or a Result tag that contradicts a checkmate or stalemate (`result_mismatch`), exclude that record, are listed in `summary.issues`, and leave the game `conflicting` if no other record is valid. Resignations, flags and agreed draws cannot be proven from the moves, so those results rest on the source alone.
+
+**Identity.** Players merge by FIDE id first, then by normalised name (accents, case and word order ignored). A name seen with two different FIDE ids is never merged. Games are the same game when round, white and black match.
+
+**Package status.** `failed`: sources were called and none returned data. `complete`: every required fact has a claim at or above its level. `partial`: anything else. `summary` lists `missing` (with reasons: `no_approved_source`, `no_data`, `source_failed`, `not_applicable_yet`, `unknown_fact`), `blocked`, `conflicts`, `sourceErrors`, `skippedSources`, `issues` and the retrieval time range. `content_hash` is the SHA-256 of the claims, their evidence hashes and the open problems, independent of retrieval time and list order.
+
+**Gate.** `assertReadyForGeneration(db, packageId)` throws `ResearchNotReadyError` (with reasons) unless the package is `complete`, every claim still meets its level and every claim has evidence. Generation (1.7) must call it.
+
+**Evidence rule.** A claim is never stored without at least one `research_claim_sources` row; `savePackage` refuses it, and the claims table is append-only.
+
+**Untrusted text.** Names and other strings from a source are stored only inside claim values. They are never used as instructions or placed in claim descriptions.
+
+**Dev tool:** `npm run research:build -- --event <id> [--game <id>] [--phase tournament]` creates a manual opportunity and prints the package.
+
+**Known gaps:** `next_cycle.stage` has no approved source, so any phase requiring it stays `partial`. `participants` lists only players who have appeared in a retrieved game, so it is empty before round 1. Events are not matched across different sources yet; each source needs its own event reference in `eventRefs`.
+

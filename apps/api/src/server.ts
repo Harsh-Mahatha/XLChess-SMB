@@ -1,5 +1,5 @@
 import { createApp } from './app.js';
-import { loadConfigSet, syncConfigs } from './config/index.js';
+import { loadConfigSet, syncConfigs, syncSources } from './config/index.js';
 import { getDb } from './db/client.js';
 import { loadEnv } from './env.js';
 import { createLogger } from './logger.js';
@@ -18,6 +18,8 @@ try {
 if (env.DATABASE_URL) {
   const results = await syncConfigs(await getDb(), configSet);
   logger.info({ results }, 'post-type configs synced');
+  const sourceResults = await syncSources(await getDb(), configSet.sources);
+  logger.info({ sourceResults }, 'source registry synced');
 }
 
 const app = createApp({ env, logger });

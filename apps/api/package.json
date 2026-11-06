@@ -10,12 +10,14 @@
     "start": "node dist/server.js",
     "config:validate": "tsx src/config/cli.ts",
     "db:pull": "prisma db pull && prisma generate",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "research:build": "tsx --env-file-if-exists=../../.env src/research/cli.ts"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.0",
     "@prisma/client": "^6.1.0",
     "@smb/shared": "*",
+    "chess.js": "^1.4.0",
     "express": "^5.0.1",
     "pino": "^9.6.0",
     "pino-http": "^10.3.0",

@@ -27,7 +27,8 @@
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:migration:new": "supabase migration new",
-    "db:pull": "npm run db:pull -w @smb/api"
+    "db:pull": "npm run db:pull -w @smb/api",
+    "research:build": "npm run research:build -w @smb/api --"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
