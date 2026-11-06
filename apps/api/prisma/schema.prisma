@@ -72,6 +72,7 @@ model jobs {
   post_candidates      post_candidates[]
   publication_attempts publication_attempts[]
   research_packages    research_packages[]
+  story_selections     story_selections[]
 
   @@index([opportunity_id], map: "jobs_opportunity")
   @@schema("smb")
@@ -245,6 +246,7 @@ model post_opportunities {
   post_types         post_types           @relation(fields: [post_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   research_packages  research_packages[]
   review_actions     review_actions[]
+  story_selections   story_selections[]
 
   @@index([status, scheduled_for], map: "post_opportunities_status")
   @@schema("smb")
@@ -380,6 +382,7 @@ model research_packages {
   created_at         DateTime           @default(now()) @db.Timestamptz(6)
   post_candidates    post_candidates[]
   research_claims    research_claims[]
+  story_selections   story_selections[]
   jobs               jobs?              @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -465,6 +468,30 @@ model source_records {
   @@schema("smb")
 }
 
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model story_selections {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunity_id      String              @db.Uuid
+  research_package_id String              @db.Uuid
+  outcome             String
+  angle_id            String?
+  fingerprint         String?
+  features            Json                @default("[]")
+  score               Decimal?            @db.Decimal(4, 3)
+  reason              String
+  ranking             Json                @default("[]")
+  selector_version    String
+  job_id              String?             @db.Uuid
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  jobs                jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities  post_opportunities  @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  research_packages   research_packages   @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([opportunity_id, research_package_id])
+  @@index([created_at(sort: Desc)], map: "story_selections_recent")
+  @@schema("smb")
+}
+
 enum asset_kind {
   original
   derived
@@ -530,6 +557,7 @@ enum opportunity_status {
   partially_published
   rejected
   deferred
+  skipped
   failed
 
   @@schema("smb")
