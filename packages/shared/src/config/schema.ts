@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Channel } from '../domain/index.js';
+import { StorySelection } from '../story/index.js';
 
 /** Bump when the shape of a post-type config file changes incompatibly. */
 export const CONFIG_SCHEMA_VERSION = 1;
@@ -163,6 +164,8 @@ export const PostTypeConfig = z
     /** Lower runs first (same scale as jobs.priority). */
     priority: z.number().int().min(1).max(1000),
     deduplication: Deduplication,
+    /** Optional tuning of story selection (module 1.6). Defaults apply when omitted. */
+    storySelection: StorySelection.optional(),
     retryPolicy: RetryPolicy,
   })
   .strict()
