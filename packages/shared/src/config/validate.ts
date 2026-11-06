@@ -1,5 +1,6 @@
 import { ZodError } from 'zod';
 import type { ChannelsRegistry, SourcesRegistry, Taxonomy } from './registries.js';
+import { isKnownAngle } from '../story/index.js';
 import { ConfigOverride, PostTypeConfig, type ContentRules, type ScheduleRule } from './schema.js';
 
 /** Thrown with every problem found, so a bad config set is fixed in one pass. */
@@ -64,6 +65,14 @@ export function crossValidate(set: ConfigSet): string[] {
 
     for (const id of cfg.channels) {
       if (!channels.has(id)) issues.push(at(`unknown channel ${id}`));
+    }
+
+    const story = cfg.storySelection;
+    for (const id of story?.angles ?? []) {
+      if (!isKnownAngle(id)) issues.push(at(`storySelection.angles: unknown angle "${id}"`));
+    }
+    if (story?.weights && Object.values(story.weights).every((w) => w === 0)) {
+      issues.push(at('storySelection.weights: at least one weight must be above 0'));
     }
     // Disabled channels are allowed (skipped at publish time), but a live post type needs one that works.
     if (cfg.enabled && !cfg.channels.some((id) => channels.get(id)?.enabled)) {

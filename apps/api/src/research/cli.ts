@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { loadConfigSet, syncConfigs, syncSources } from '../config/index.js';
 import { getDb } from '../db/client.js';
 import { PrismaSourceRecordStore, createSourceGateway } from '../sources/index.js';
+import { selectStory } from '../story/service.js';
 import { notReadyReasons } from './assemble.js';
 import { buildResearchPackage } from './package.js';
 import type { PackageSummary } from '@smb/shared';
@@ -9,7 +10,8 @@ import type { PackageSummary } from '@smb/shared';
 /**
  * Developer tool: build a research package by hand until the event monitor (1.16) creates opportunities.
  *   npm run research:build -w @smb/api -- --event <provider event id> [--game <provider game id>]
- *        [--source D3] [--phase tournament] [--post-type 1.1]
+ *        [--source D3] [--phase tournament] [--post-type 1.1] [--select]
+ * --select also runs story selection (module 1.6).
  * Needs DATABASE_URL (the SMB Supabase project). It creates a manual opportunity and prints the result.
  */
 const { values } = parseArgs({
@@ -19,12 +21,13 @@ const { values } = parseArgs({
     source: { type: 'string', default: 'D3' },
     phase: { type: 'string' },
     'post-type': { type: 'string', default: '1.1' },
+    select: { type: 'boolean', default: false },
   },
 });
 
 if (!values.event) {
   process.stderr.write(
-    'usage: research:build --event <id> [--game <id>] [--source D3] [--phase <id>] [--post-type 1.1]\n',
+    'usage: research:build --event <id> [--game <id>] [--source D3] [--phase <id>] [--post-type 1.1] [--select]\n',
   );
   process.exit(2);
 }
@@ -80,4 +83,10 @@ process.stdout.write(
     ? `NOT ready for generation:\n${reasons.map((r) => `  - ${r}`).join('\n')}\n`
     : 'Ready for generation.\n',
 );
+if (values.select) {
+  const sel = await selectStory(db, opportunity.id);
+  process.stdout.write(
+    `story: ${sel.outcome}${sel.angleId ? ` -> ${sel.angleId} (${sel.score})` : ''}\n${sel.reason}\n`,
+  );
+}
 await db.$disconnect();

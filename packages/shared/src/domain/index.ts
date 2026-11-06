@@ -17,6 +17,7 @@ export const OpportunityStatus = z.enum([
   'partially_published',
   'rejected',
   'deferred',
+  'skipped',
   'failed',
 ]);
 export type OpportunityStatus = z.infer<typeof OpportunityStatus>;
