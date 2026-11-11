@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "installerVersion": "0.1.0",
+  "requirements": {
+    "minWindowsBuild": 19045,
+    "windows11Build": 22000,
+    "minVramMiB": 11500,
+    "minDriverVersion": "560.76",
+    "minRamGB": 15,
+    "recommendedRamGB": 60,
+    "diskHeadroomGB": 10,
+    "ports": [11434, 8188],
+    "hosts": ["github.com", "huggingface.co", "registry.ollama.ai", "nodejs.org"]
+  },
+  "components": {
+    "node": {
+      "version": "22.23.4",
+      "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-win-x64.zip",
+      "sha256": "cbc74b5e0982c9dbb41525fd8fb5dcd32fbee237863f7829072f4639a1ce5f20",
+      "sizeBytes": 35604229,
+      "archiveRoot": "node-v22.23.4-win-x64"
+    },
+    "sevenZip": {
+      "version": "26.06",
+      "url": "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe",
+      "sha256": "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc",
+      "sizeBytes": 600064
+    },
+    "winsw": {
+      "version": "2.12.0",
+      "url": "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe",
+      "sha256": "05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da",
+      "sizeBytes": 18243033
+    },
+    "ollama": {
+      "version": "0.40.16",
+      "url": "https://github.com/ollama/ollama/releases/download/v0.40.16/ollama-windows-amd64.zip",
+      "sha256": "50fcf5ad54277f2fa5d173ebfc93bcb017adbc0c9ef2314daabc96ca9e6aa64e",
+      "sizeBytes": 1618244995
+    },
+    "comfyui": {
+      "version": "0.45.0",
+      "build": "nvidia_cu126",
+      "url": "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.45.0/ComfyUI_windows_portable_nvidia_cu126.7z",
+      "sha256": "e7d1be2bd81deec3f46a89e29b8c6826f45c05609f29d6681d7876f687d69d29",
+      "sizeBytes": 1962803660,
+      "archiveRoot": "ComfyUI_windows_portable"
+    }
+  },
+  "models": {
+    "llm": {
+      "name": "qwen3.5:9b",
+      "blobs": [
+        {
+          "role": "model",
+          "sha256": "02d45dc1cf451ba2475ac33b301c2dd8f985abe4c182ce04a1f2f5bf0260278d",
+          "sizeBytes": 5629109120
+        },
+        {
+          "role": "projector",
+          "sha256": "f836f08f921193f4d6b6a6952dba0a6fb116759d26a757bcb395d570d73976ca",
+          "sizeBytes": 921704832
+        }
+      ]
+    },
+    "image": {
+      "name": "z-image-turbo",
+      "repo": "Comfy-Org/Z-Image-Turbo",
+      "revision": "6fc90a3b1b653e935a0d175e260736de25b84df5",
+      "files": [
+        {
+          "role": "diffusion_model",
+          "path": "split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+          "dest": "ComfyUI/models/diffusion_models/z_image_turbo_bf16.safetensors",
+          "sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+          "sizeBytes": 12309866400
+        },
+        {
+          "role": "text_encoder",
+          "path": "split_files/text_encoders/qwen_3_4b.safetensors",
+          "dest": "ComfyUI/models/text_encoders/qwen_3_4b.safetensors",
+          "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+          "sizeBytes": 8044982048
+        },
+        {
+          "role": "vae",
+          "path": "split_files/vae/ae.safetensors",
+          "dest": "ComfyUI/models/vae/ae.safetensors",
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+          "sizeBytes": 335304388
+        }
+      ]
+    }
+  }
+}
