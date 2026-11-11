@@ -20,6 +20,8 @@ export const GPU_JOB_KINDS = [
   'story_select',
   'candidates_generate',
   'revision_from_feedback',
+  /** Queued once when a PC is paired: a short text stage and image stage that prove the whole path works. */
+  'worker_selftest',
 ] as const;
 export const GpuJobKind = z.enum(GPU_JOB_KINDS);
 export type GpuJobKind = z.infer<typeof GpuJobKind>;
