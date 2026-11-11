@@ -30,7 +30,9 @@
     "db:pull": "npm run db:pull -w @smb/api",
     "research:build": "npm run research:build -w @smb/api --",
     "story:select": "npm run story:select -w @smb/api --",
-    "candidates:generate": "npm run candidates:generate -w @smb/api --"
+    "candidates:generate": "npm run candidates:generate -w @smb/api --",
+    "installer:package": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/build-package.ps1",
+    "installer:test": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Import-Module Pester; Invoke-Pester installer/tests\""
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
