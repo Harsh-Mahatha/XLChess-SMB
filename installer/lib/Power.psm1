@@ -3,6 +3,8 @@
 
 Set-StrictMode -Version 2.0
 
+Import-Module (Join-Path $PSScriptRoot 'Common.psm1')
+
 # powercfg aliases: STANDBYIDLE = "Sleep after", HIBERNATEIDLE = "Hibernate after".
 $script:PowerSettings = @(
     [pscustomobject]@{ Key = 'SleepAfter'; Sub = 'SUB_SLEEP'; Setting = 'STANDBYIDLE' }
@@ -45,4 +47,38 @@ function Test-AcSleepDisabled {
     $true
 }
 
-Export-ModuleMember -Function ConvertFrom-PowercfgQuery, Get-AcPowerSettings, Test-AcSleepDisabled
+
+function ConvertTo-PowercfgMinutes {
+    <# powercfg /change takes minutes; the plan stores seconds. 0 stays 0 (never). #>
+    param($Seconds)
+    if ($null -eq $Seconds) { return $null }
+    [int][math]::Ceiling([double]$Seconds / 60.0)
+}
+
+function Set-AcSleepNever {
+    <#
+    .SYNOPSIS Turns off sleep and hibernate on AC power. The previous values are saved once so uninstall can restore them.
+    #>
+    param([Parameter(Mandatory)][string]$BackupPath)
+    $current = Get-AcPowerSettings
+    if (-not (Test-Path -LiteralPath $BackupPath)) {
+        Write-JsonFile -Path $BackupPath -Value ([ordered]@{ SleepAfter = $current.SleepAfter; HibernateAfter = $current.HibernateAfter })
+    }
+    & powercfg.exe /change standby-timeout-ac 0 | Out-Null
+    & powercfg.exe /change hibernate-timeout-ac 0 | Out-Null
+}
+
+function Restore-AcSleep {
+    param([Parameter(Mandatory)][string]$BackupPath)
+    if (-not (Test-Path -LiteralPath $BackupPath)) { return $false }
+    $b = Read-JsonFile -Path $BackupPath
+    $sleep = ConvertTo-PowercfgMinutes $b.SleepAfter
+    $hib = ConvertTo-PowercfgMinutes $b.HibernateAfter
+    if ($null -ne $sleep) { & powercfg.exe /change standby-timeout-ac $sleep | Out-Null }
+    if ($null -ne $hib) { & powercfg.exe /change hibernate-timeout-ac $hib | Out-Null }
+    Remove-Item -LiteralPath $BackupPath -Force
+    $true
+}
+
+Export-ModuleMember -Function ConvertFrom-PowercfgQuery, Get-AcPowerSettings, Test-AcSleepDisabled,
+    ConvertTo-PowercfgMinutes, Set-AcSleepNever, Restore-AcSleep

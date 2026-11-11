@@ -175,6 +175,21 @@ function Reset-StepResult {
     if ($State.steps.PSObject.Properties[$Step]) { $State.steps.PSObject.Properties.Remove($Step) }
 }
 
+
+function Resolve-InstallPaths {
+    <#
+    .SYNOPSIS Finds the paths of an existing install from where a maintenance script runs
+    (Program\scripts\*.ps1 -> Program\install.json). Falls back to the defaults.
+    #>
+    param([Parameter(Mandatory)][string]$ScriptRoot)
+    $marker = Join-Path (Split-Path -Parent $ScriptRoot) 'install.json'
+    if (Test-Path -LiteralPath $marker) {
+        $m = Read-JsonFile -Path $marker
+        return Get-InstallPaths -ProgramPath $m.programPath -DataPath $m.dataPath
+    }
+    Get-InstallPaths
+}
+
 # ---------------------------------------------------------------- misc
 
 function Test-PortInUse {
@@ -190,4 +205,4 @@ function Test-PortInUse {
 Export-ModuleMember -Function Get-ServiceName, Get-WatchdogTaskName, Get-InstallPaths, Test-IsAdmin,
     Format-Bytes, Initialize-Log, Write-Log, Read-JsonFile, Write-JsonFile, Get-Manifest,
     Get-ManifestDownloadBytes, Get-InstallState, Save-InstallState, Test-StepDone, Set-StepResult,
-    Reset-StepResult, Test-PortInUse
+    Reset-StepResult, Test-PortInUse, Resolve-InstallPaths

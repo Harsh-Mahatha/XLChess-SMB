@@ -23,6 +23,8 @@
     Turn off sleep and hibernate on AC power without asking.
 .PARAMETER SkipGpuChecks
     Developer only: treat GPU preflight failures as warnings.
+.PARAMETER SkipSelfTest
+    Developer only: do not run the local GPU self-test (step 9).
 #>
 [CmdletBinding()]
 param(
@@ -33,14 +35,15 @@ param(
     [string]$ProgramPath,
     [switch]$Yes,
     [switch]$AllowPowerChanges,
-    [switch]$SkipGpuChecks
+    [switch]$SkipGpuChecks,
+    [switch]$SkipSelfTest
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $InstallerRoot = $PSScriptRoot
-foreach ($m in 'Common', 'Power', 'Preflight') {
+foreach ($m in 'Common', 'Power', 'Preflight', 'Download', 'Runtimes', 'Service') {
     Import-Module (Join-Path $InstallerRoot "lib\$m.psm1") -Force -DisableNameChecking
 }
 
@@ -50,8 +53,71 @@ if ($ProgramPath) { $pathArgs.ProgramPath = $ProgramPath }
 $Paths = Get-InstallPaths @pathArgs
 $Manifest = Get-Manifest -Path (Join-Path $InstallerRoot 'manifest.json')
 
-# Steps in order. Each is { Name; Title; Run }. Later milestones append to this list.
+# Steps in order. Each is { Name; Title; Run } and must be safe to run again (it checks what is already in place).
+# Later milestones append to this list (service, firewall, power, pairing, end-to-end test).
 $Steps = New-Object System.Collections.ArrayList
+function Add-Step {
+    param([string]$Name, [string]$Title, [scriptblock]$Run)
+    [void]$Steps.Add([pscustomobject]@{ Name = $Name; Title = $Title; Run = $Run })
+}
+
+Add-Step 'folders' 'Creating folders and settings' {
+    New-InstallFolders -Paths $Paths
+    Write-WorkerConfig -Paths $Paths -Manifest $Manifest -ApiUrl $ApiUrl
+}
+Add-Step 'tools' 'Installing 7-Zip (used to unpack ComfyUI)' { Install-SevenZip -Manifest $Manifest -Paths $Paths }
+Add-Step 'node' 'Installing Node.js' { Install-NodeRuntime -Manifest $Manifest -Paths $Paths }
+Add-Step 'worker' 'Installing the worker' { Install-WorkerFiles -Paths $Paths -InstallerRoot $InstallerRoot }
+Add-Step 'ollama' 'Installing Ollama (text model runtime)' { Install-OllamaRuntime -Manifest $Manifest -Paths $Paths }
+Add-Step 'llm-model' "Downloading the text model ($($Manifest.models.llm.name))" { Install-OllamaModel -Manifest $Manifest -Paths $Paths }
+Add-Step 'comfyui' 'Installing ComfyUI (image model runtime)' { Install-ComfyRuntime -Manifest $Manifest -Paths $Paths }
+Add-Step 'image-models' "Downloading the image model ($($Manifest.models.image.name))" { Install-ImageModels -Manifest $Manifest -Paths $Paths }
+Add-Step 'selftest-local' 'Testing the GPU: text model, then image model' {
+    if ($SkipSelfTest) { Write-Log -Level Warn -Message 'Skipped (-SkipSelfTest).'; return }
+    if (-not (Invoke-LocalSelfTest -Paths $Paths)) {
+        throw 'The local GPU test failed. The models are kept, so running the installer again only repeats the test.'
+    }
+}
+Add-Step 'firewall' 'Blocking inbound access to the model servers' {
+    try { Register-FirewallRules -Manifest $Manifest }
+    catch { Write-Log -Level Warn -Message "Could not add the firewall rules: $($_.Exception.Message)" }
+}
+Add-Step 'power' 'Keeping the PC awake while plugged in' {
+    if (Test-AcSleepDisabled -Settings (Get-AcPowerSettings)) {
+        Write-Log -Message 'Sleep and hibernate are already off on AC power.'
+    } elseif ($AllowPowerChanges -or (Confirm-Action 'Turn off sleep and hibernate while plugged in, so the worker can run 24/7?')) {
+        Set-AcSleepNever -BackupPath $Paths.PowerBackup
+        Write-Log -Level Ok -Message 'Sleep and hibernate are now off on AC power (the old values are saved for uninstall).'
+    } else {
+        Write-Log -Level Warn -Message 'Left as it was. The PC may go to sleep, which stops the worker.'
+    }
+    Write-Log -Message 'Recommended once: in the BIOS/UEFI, set "Restore on AC power loss" to "Power On" so the PC starts again after a power cut.'
+}
+Add-Step 'service' 'Installing and starting the worker service' {
+    Install-ManagementScripts -Paths $Paths -InstallerRoot $InstallerRoot
+    Install-WorkerService -Manifest $Manifest -Paths $Paths -Account Virtual
+    Register-WatchdogTask -Paths $Paths
+    Register-Shortcuts -Paths $Paths
+
+    $needGpu = -not $SkipGpuChecks
+    foreach ($account in 'Virtual', 'LocalSystem') {
+        if ($account -eq 'LocalSystem') {
+            Write-Log -Level Warn -Message 'The worker could not see the GPU from the limited service account; switching to the LocalSystem account.'
+            Stop-WorkerService -Paths $Paths
+            Install-WorkerService -Manifest $Manifest -Paths $Paths -Account LocalSystem
+        }
+        $started = Get-Date
+        Start-WorkerService -Paths $Paths
+        Write-Log -Message 'Waiting for the worker to report healthy...'
+        $health = Wait-WorkerHealthy -Paths $Paths -Since $started -TimeoutSeconds 120
+        if (-not $health) {
+            throw "The service started but the worker did not report healthy. See the logs in $($Paths.Logs)."
+        }
+        if ($health.gpu -or -not $needGpu) { break }
+        if ($account -eq 'LocalSystem') { throw 'The worker service cannot see the GPU (nvidia-smi). Check the NVIDIA driver and run the installer again.' }
+    }
+    Write-Log -Level Ok -Message "Worker is running (version $($health.version))."
+}
 
 function Confirm-Action {
     param([Parameter(Mandatory)][string]$Question)
