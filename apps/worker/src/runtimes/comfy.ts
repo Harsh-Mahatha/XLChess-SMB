@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkerConfig, WorkerPaths } from '../config.js';
 import { ManagedProcess } from './process.js';
@@ -45,6 +45,14 @@ export class ComfyRuntime implements ImageRuntime {
 
   async start(): Promise<void> {
     if (this.running) return;
+    for (const dir of [
+      this.paths.outputs,
+      this.paths.comfyTemp,
+      this.paths.comfyInput,
+      this.paths.comfyUser,
+    ]) {
+      mkdirSync(dir, { recursive: true });
+    }
     this.proc = new ManagedProcess({
       name: 'comfyui',
       command: this.paths.comfyPython,

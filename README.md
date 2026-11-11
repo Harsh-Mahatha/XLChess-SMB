@@ -13,7 +13,7 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Module specs: [docs/READ
 | `packages/shared` | Zod contracts shared by API and worker                |
 | `config/`         | Versioned post-type, source and channel JSON          |
 | `supabase/`       | SQL migrations (source of truth for the `smb` schema) |
-| `installer/`      | PowerShell worker installer (Phase 3)                 |
+| `installer/`      | PowerShell worker installer (see installer/README.md) |
 
 ## Getting started
 

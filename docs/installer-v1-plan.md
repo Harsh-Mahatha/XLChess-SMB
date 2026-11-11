@@ -208,3 +208,35 @@ These are decisions with a planned fallback. Each needs checking once on the RTX
 | 5 | Run on the real PC, the §10 checks, 1.21 handover notes (including the Windows 10 assessment) | Yes |
 
 **Testing:** Pester unit tests for the pure functions (version and threshold checks, manifest parsing, state transitions). Dev flags `-SkipGpuChecks` and `-ApiUrl` let the flow be tested on a PC without a GPU against a local API. A clean Windows VM checks that every failing preflight gives a clear message. The last check is the real PC.
+
+
+---
+
+## 12. Implementation status (11 Nov 2026)
+
+**Built and tested** (installer: 120 Pester tests; worker: 51 Vitest tests):
+
+| Milestone | Status |
+|---|---|
+| 1. Preflight, manifest, verified downloads | Done. `-CheckOnly` was run on a real PC. The pinned Hugging Face, GitHub, Node and Ollama-registry values were resolved from the sources. 7-Zip and WinSW were downloaded from their pinned URLs and matched their hashes. |
+| 2. Runtimes, models, local GPU test | Code done. The worker's `--selftest-local` runs on a real GPU up to the model-file check. The Ollama pull, the ComfyUI 7z unpack and both model runs have **not** been executed (see below). |
+| 3. Service, watchdog, firewall, power, shortcuts, repair, diagnose, uninstall | Code done. Pure logic and shortcut creation are tested. **Not run on a real service**: that needs an administrator and the 12 GB PC. |
+| 4. Pairing, token storage | Done and tested end to end against a mock API (PowerShell, the real worker bundle, DPAPI). The worker reports status to the API every 30 s once paired. |
+| 4. Self-test part B (job through the server) | **Not built.** It needs the API's worker endpoints and a job claim loop in the worker (module 1.17). |
+| 5. Run on the 12 GB PC | **Not done.** |
+
+**Changes from the plan above:**
+- The bundle is `worker/worker.cjs`, not `worker.js` (the repo's `package.json` marks `.js` as ES modules).
+- WinSW is downloaded and checksum-verified from the manifest, like every other download, not shipped inside the package.
+- ComfyUI is the `nvidia_cu126` portable build (widest driver support; minimum driver 560.76). Minimum RAM is 15 GB because Windows reports a nominal 16 GB PC as about 15.8 GB.
+- The text model is verified by the size of each pinned blob in Ollama's store (Ollama checks the digest itself while pulling).
+- The pairing re-run is `repair -NewPairing`: PowerShell parameter names are case-insensitive, so `-RePair` would have collided with `-Repair`.
+- A `worker_selftest` job kind and the pair/status schemas are in `packages/shared`. ARCHITECTURE.md is still not updated.
+
+**Not yet exercised against reality** (the network was too slow to download several GB when this was built):
+1. `ollama pull qwen3.5:9b` and the blob-size check.
+2. Unpacking the real ComfyUI `.7z` with the pinned `7zr.exe`, and keeping `ComfyUI/models` across a version change.
+3. Starting ComfyUI headless with the flags in `comfy.ts`, and the Z-Image-Turbo workflow producing an image.
+4. Everything in section 10 (CUDA under the service account, memory-release timing, speed with RAM offload, 16K context).
+
+Run `install.cmd -CheckOnly`, then a full install on the real PC with `-ApiUrl` and a pairing code, and report any step that fails: each failure names its step and the installer can be run again.
