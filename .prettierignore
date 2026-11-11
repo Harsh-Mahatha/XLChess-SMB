@@ -4,3 +4,4 @@ coverage
 package-lock.json
 supabase/.temp
 docs
+bundle

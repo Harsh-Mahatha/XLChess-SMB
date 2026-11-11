@@ -10,3 +10,4 @@ coverage/
 supabase/.temp/
 supabase/.branches/
 .worker-data/
+apps/worker/bundle/

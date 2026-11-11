@@ -37,7 +37,7 @@ V1 is accepted when this sequence works on the real PC (the 1.21 demonstration):
 | Image workflow | One API-format workflow file in the repo (`apps/worker/workflows/z-image-turbo.json`): 8 steps, CFG 1, 1024×1024. Prompt, seed and size are filled in by the worker. | The workflow is versioned with the code and doesn't depend on hand edits in a UI. |
 | Composition (Sharp + SVG) | **Stays on the server**, as ARCHITECTURE §5 has it. The worker returns raw images. | Composition needs brand assets, licensed photos from Storage and exact text, all of which are server-side. It needs no GPU. The PC therefore doesn't need Sharp or Playwright. |
 | Node.js | **Portable Node 22 LTS** (pinned zip) inside the install folder, not a system-wide install | Can't conflict with anything else on the PC. Updates are under our control. |
-| Worker delivery | Shipped **inside the installer package** as one bundled `worker.js` (esbuild). It isn't fetched separately. | One download, and the worker can be installed and tested before pairing. |
+| Worker delivery | Shipped **inside the installer package** as one bundled `worker.cjs` (esbuild). It isn't fetched separately. | One download, and the worker can be installed and tested before pairing. |
 | Process model | **One Windows service, `XLChessWorker`**, wrapped by **WinSW** (MIT, single exe). The worker **supervises Ollama and ComfyUI as child processes**. | One thing to keep alive. The worker controls exactly when each runtime runs, which the one-model-at-a-time rule needs. |
 | Service account | Virtual account `NT SERVICE\XLChessWorker`. Fall back to `LocalSystem` only if CUDA fails under it in testing (§10). | Lowest privilege that should work. It needs checking on the real PC. |
 | Sequential GPU use | Ollama stays running (it uses no VRAM with no model loaded). At the end of the LLM stage the worker unloads explicitly (`keep_alive: 0`) and checks `/api/ps` and `nvidia-smi`. **ComfyUI is started for the image stage and stopped afterwards**, so its VRAM is released by the process exiting. | Follows the models guide's §7 rules: don't assume a finished request has released VRAM. |
@@ -61,7 +61,7 @@ repair-xlchess-worker.ps1      restart / re-verify / re-download / re-pair
 uninstall-xlchess-worker.ps1   remove everything (asks before deleting models)
 lib/*.psm1                     shared functions (checks, downloads, service, power, pairing)
 manifest.json                  pinned versions, URLs, SHA-256 of every download
-worker/worker.js               bundled worker + workflows/z-image-turbo.json
+worker/worker.cjs               bundled worker + workflows/z-image-turbo.json
 tools/winsw.exe                service wrapper (pinned, hash-checked)
 ```
 
@@ -94,7 +94,7 @@ Each step reads and writes `install-state.json`. It is skipped if already done a
 | 1 | **Preflight** | All checks in §5. Prints a pass/warn/fail table. `-CheckOnly` stops here. | Stop with the failing check and what to do about it. Nothing has been changed yet. |
 | 2 | **Consent** | Lists what will be installed, the download and disk size (totals from the manifest) and the power changes. Owner confirms. | — |
 | 3 | **Folders and ACLs** | Create §3 folders. Grant the service account the data folder. | Stop. |
-| 4 | **Node + worker** | Unpack portable Node and `worker.js`. Run `node worker.js --version`. | Stop. |
+| 4 | **Node + worker** | Unpack portable Node and `worker.cjs`. Run `node worker.cjs --version`. | Stop. |
 | 5 | **Ollama** | Download the zip, check its hash, unpack. Start `ollama serve` temporarily with the §2 settings. | Retry the download 3 times, then stop. |
 | 6 | **Qwen3.5 9B** | `ollama pull`, then compare the digest with the manifest. | Retry (a pull resumes), then stop. |
 | 7 | **ComfyUI** | Download the portable release, check its hash, extract to `data\comfyui`. | Retry, then stop. |

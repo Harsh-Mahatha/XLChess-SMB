@@ -25,7 +25,7 @@ function Get-InstallPaths {
         Node           = Join-Path $ProgramPath 'node'
         NodeExe        = Join-Path $ProgramPath 'node\node.exe'
         Worker         = Join-Path $ProgramPath 'worker'
-        WorkerJs       = Join-Path $ProgramPath 'worker\worker.js'
+        WorkerJs       = Join-Path $ProgramPath 'worker\worker.cjs'
         Workflows      = Join-Path $ProgramPath 'worker\workflows'
         Ollama         = Join-Path $ProgramPath 'ollama'
         OllamaExe      = Join-Path $ProgramPath 'ollama\ollama.exe'
