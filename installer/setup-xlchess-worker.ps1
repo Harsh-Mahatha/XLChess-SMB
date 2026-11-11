@@ -43,7 +43,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $InstallerRoot = $PSScriptRoot
-foreach ($m in 'Common', 'Power', 'Preflight', 'Download', 'Runtimes', 'Service') {
+foreach ($m in 'Common', 'Power', 'Preflight', 'Download', 'Runtimes', 'Service', 'Pairing') {
     Import-Module (Join-Path $InstallerRoot "lib\$m.psm1") -Force -DisableNameChecking
 }
 
@@ -92,6 +92,23 @@ Add-Step 'power' 'Keeping the PC awake while plugged in' {
         Write-Log -Level Warn -Message 'Left as it was. The PC may go to sleep, which stops the worker.'
     }
     Write-Log -Message 'Recommended once: in the BIOS/UEFI, set "Restore on AC power loss" to "Power On" so the PC starts again after a power cut.'
+}
+Add-Step 'pairing' 'Pairing this PC with XLChess' {
+    if (Test-DeviceTokenPresent -Paths $Paths) { Write-Log -Message 'This PC is already paired.'; return }
+    $url = $ApiUrl
+    if (-not $url -and (Test-Path -LiteralPath $Paths.Config)) {
+        $saved = Read-JsonFile -Path $Paths.Config
+        if ($saved.PSObject.Properties['apiUrl']) { $url = [string]$saved.apiUrl }
+    }
+    if (-not $url) {
+        if ($Yes) {
+            Write-Log -Level Warn -Message 'No -ApiUrl was given, so this PC is not paired. Run repair-xlchess-worker.ps1 -NewPairing -ApiUrl <address> later.'
+            return
+        }
+        $url = Read-Host 'SMB API address (for example https://smb.example.com)'
+    }
+    Write-WorkerConfig -Paths $Paths -Manifest $Manifest -ApiUrl $url
+    [void](Invoke-WorkerPairing -Paths $Paths -PairingCode $PairingCode)
 }
 Add-Step 'service' 'Installing and starting the worker service' {
     Install-ManagementScripts -Paths $Paths -InstallerRoot $InstallerRoot
@@ -179,7 +196,14 @@ try {
             Save-InstallState -Paths $Paths -State $state
         }
     }
-    Write-Log -Level Ok -Message 'Setup finished.'
+    $paired = Test-DeviceTokenPresent -Paths $Paths
+    Write-Log -Level Step -Message 'Setup finished'
+    Write-Log -Level Ok -Message "The worker is installed and runs in the background, including after a restart."
+    if ($paired) { Write-Log -Level Ok -Message 'This PC is paired with XLChess.' }
+    else { Write-Log -Level Warn -Message 'This PC is NOT paired yet. Run repair-xlchess-worker.ps1 -NewPairing -ApiUrl <address>.' }
+    Write-Log -Message "If the worker ever stops: Start menu > '$((Split-Path -Leaf (Get-ShortcutFolder)))' > 'Restart XLChess Worker'."
+    Write-Log -Message "Status and support report: Start menu > '$((Split-Path -Leaf (Get-ShortcutFolder)))' > 'XLChess Worker Status'."
+    Write-Log -Message "Logs: $($Paths.Logs)"
     exit 0
 } catch {
     Write-Log -Level Error -Message $_.Exception.Message

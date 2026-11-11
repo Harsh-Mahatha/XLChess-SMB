@@ -164,7 +164,7 @@ Restarting is always safe. Any job running at the time has its lease expire. The
 | Script | V1 behaviour |
 |---|---|
 | `diagnose` | Versions, `nvidia-smi`, service and watchdog status, last heartbeat age, API reachability, disk, power settings and the last 200 log lines, in a support zip **with the token and pairing codes redacted**. `-Upload` sends a summary through `/worker/v1/logs`. |
-| `repair` | `-Restart` (§7), `-Verify` (re-run preflight, hash-check every file, re-download anything that fails, then self-test part A), `-Repair` (re-register the service and watchdog) and `-RePair` (new pairing code; replaces the token). |
+| `repair` | `-Restart` (§7), `-Verify` (re-run preflight, hash-check every file, re-download anything that fails, then self-test part A), `-Repair` (re-register the service and watchdog) and `-NewPairing` (new pairing code; replaces the token). |
 | `uninstall` | Stop and remove the service, watchdog, shortcuts and firewall rules. Restore the saved power settings. Remove Program Files. **Ask** whether to keep the data folder, which holds the models, so a reinstall doesn't download them again. Say that the admin should also revoke the worker in XLChess. |
 | update | Run the newer package's `install.cmd` (§2). The service stops, binaries are replaced, data and models are kept, then preflight and self-test run again. |
 

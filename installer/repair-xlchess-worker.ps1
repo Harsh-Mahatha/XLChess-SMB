@@ -9,18 +9,27 @@
     the pinned checksums, downloads anything missing or damaged, and repeats the GPU test.
 .PARAMETER Repair
     Register the service, watchdog, firewall rules and shortcuts again, then restart.
+.PARAMETER NewPairing
+    Pair this PC again with a new pairing code (for example after the worker was revoked in XLChess).
+.PARAMETER ApiUrl
+    SMB API address to pair with, when it is not already saved in config.json.
+.PARAMETER PairingCode
+    The new pairing code. If omitted, you are asked for it.
 #>
 [CmdletBinding()]
 param(
     [switch]$Restart,
     [switch]$Verify,
-    [switch]$Repair
+    [switch]$Repair,
+    [switch]$NewPairing,
+    [string]$ApiUrl,
+    [string]$PairingCode
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-foreach ($m in 'Common', 'Power', 'Download', 'Service') {
+foreach ($m in 'Common', 'Power', 'Download', 'Runtimes', 'Service', 'Pairing') {
     Import-Module (Join-Path $PSScriptRoot "lib\$m.psm1") -Force -DisableNameChecking
 }
 $Paths = Resolve-InstallPaths -ScriptRoot $PSScriptRoot
@@ -31,8 +40,8 @@ if (-not (Test-IsAdmin)) {
     Write-Log -Level Error -Message 'Run this as administrator (use the "Restart XLChess Worker" Start menu shortcut).'
     exit 1
 }
-if (-not ($Restart -or $Verify -or $Repair)) {
-    Write-Host 'Choose one: -Restart (start it again), -Repair (re-register everything), -Verify (check all files).'
+if (-not ($Restart -or $Verify -or $Repair -or $NewPairing)) {
+    Write-Host 'Choose one: -Restart (start it again), -Repair (re-register everything), -Verify (check all files), -NewPairing (new pairing code).'
     exit 2
 }
 
@@ -70,6 +79,18 @@ try {
         Register-WatchdogTask -Paths $Paths
         Register-FirewallRules -Manifest $Manifest
         Register-Shortcuts -Paths $Paths
+    }
+    if ($NewPairing) {
+        Write-Log -Level Step -Message 'Pairing this PC again'
+        $url = $ApiUrl
+        if (-not $url -and (Test-Path -LiteralPath $Paths.Config)) {
+            $saved = Read-JsonFile -Path $Paths.Config
+            if ($saved.PSObject.Properties['apiUrl']) { $url = [string]$saved.apiUrl }
+        }
+        if (-not $url) { $url = Read-Host 'SMB API address (for example https://smb.example.com)' }
+        Write-WorkerConfig -Paths $Paths -Manifest $Manifest -ApiUrl $url
+        [void](Invoke-WorkerPairing -Paths $Paths -PairingCode $PairingCode)
+        $Restart = [switch]$true      # the service reads the new token when it starts
     }
     if ($Restart -or $Repair) {
         if (-not (Invoke-RestartAndCheck)) { exit 1 }
