@@ -61,6 +61,27 @@ describe('SupabaseObjectStore', () => {
     return { store, calls };
   };
 
+  it('removes an object, and treats one that is already gone as removed', async () => {
+    const ok = make(() => new Response('{}', { status: 200 }));
+    expect(await ok.store.remove('derived', 'ab/c d.jpg')).toBe(true);
+    expect(ok.calls[0]!.url).toBe(
+      'https://proj.supabase.co/storage/v1/object/derived/ab/c%20d.jpg',
+    );
+    expect(ok.calls[0]!.init.method).toBe('DELETE');
+    const gone = make(() => new Response('{"message":"not found"}', { status: 404 }));
+    expect(await gone.store.remove('derived', 'x.jpg')).toBe(false);
+    const broken = make(() => new Response('boom', { status: 500 }));
+    await expect(broken.store.remove('derived', 'x.jpg')).rejects.toBeInstanceOf(StorageError);
+  });
+
+  it('InMemoryObjectStore removes objects', async () => {
+    const mem = new InMemoryObjectStore();
+    await mem.put('b', 'p', JPEG, 'image/jpeg');
+    expect(await mem.remove('b', 'p')).toBe(true);
+    expect(await mem.get('b', 'p')).toBeUndefined();
+    expect(await mem.remove('b', 'p')).toBe(false);
+  });
+
   it('uploads with the service key to a private bucket path', async () => {
     const { store, calls } = make(() => new Response('{}', { status: 200 }));
     await store.put('originals', 'ab/c d.jpg', JPEG, 'image/jpeg');

@@ -7,6 +7,8 @@ export interface ObjectStore {
   put(bucket: string, path: string, bytes: Uint8Array, contentType: string): Promise<void>;
   /** The stored bytes, or undefined when there is no such object. */
   get(bucket: string, path: string): Promise<Uint8Array | undefined>;
+  /** Removes the object (retention). Returns false when there was nothing to remove; never fails for that. */
+  remove(bucket: string, path: string): Promise<boolean>;
 }
 
 export class StorageError extends Error {
@@ -34,6 +36,10 @@ export class InMemoryObjectStore implements ObjectStore {
 
   async get(bucket: string, path: string): Promise<Uint8Array | undefined> {
     return this.objects.get(this.key(bucket, path))?.bytes;
+  }
+
+  async remove(bucket: string, path: string): Promise<boolean> {
+    return this.objects.delete(this.key(bucket, path));
   }
 }
 
@@ -87,5 +93,16 @@ export class SupabaseObjectStore implements ObjectStore {
     if (res.status === 404 || res.status === 400) return undefined;
     if (!res.ok) throw new StorageError(`reading ${bucket}/${path} failed (HTTP ${res.status})`);
     return new Uint8Array(await res.arrayBuffer());
+  }
+
+  async remove(bucket: string, path: string): Promise<boolean> {
+    const res = await this.doFetch(`${this.base}/object/${bucket}/${encodePath(path)}`, {
+      method: 'DELETE',
+      headers: this.headers(),
+    });
+    if (res.ok) return true;
+    // Storage answers 400/404 "not found" for an object that is already gone.
+    if (res.status === 404 || res.status === 400) return false;
+    throw new StorageError(`removing ${bucket}/${path} failed (HTTP ${res.status})`);
   }
 }
