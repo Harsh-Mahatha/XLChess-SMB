@@ -82,7 +82,10 @@
         "rateLimitBackoffMs": 60000,
         "timeoutMs": 30000,
         "maxRetries": 2,
-        "cacheTtlSeconds": { "events": 300, "games": 60 }
+        "cacheTtlSeconds": {
+          "events": 300,
+          "games": 60
+        }
       }
     },
     {
@@ -141,9 +144,114 @@
         "cacheTtlSeconds": {}
       }
     },
-    { "id": "I1", "kind": "image", "name": "Wikimedia Commons", "enabled": true },
-    { "id": "I2", "kind": "image", "name": "Flickr Creative Commons", "enabled": true },
-    { "id": "I3", "kind": "image", "name": "Unsplash", "enabled": true },
-    { "id": "I4", "kind": "image", "name": "Pexels", "enabled": true }
+    {
+      "id": "I1",
+      "kind": "image",
+      "name": "Wikimedia Commons",
+      "enabled": true,
+      "access": {
+        "method": "api",
+        "baseUrl": "https://commons.wikimedia.org/w/api.php",
+        "auth": "none",
+        "termsUrl": "https://commons.wikimedia.org/wiki/Commons:Reuse_of_content_outside_Wikimedia"
+      },
+      "policy": {
+        "status": "approved",
+        "verifiedAt": "2026-11-13",
+        "automatedRetrieval": true,
+        "attributionRequired": true,
+        "notes": "Public MediaWiki API, no key. Licence data comes from imageinfo extmetadata. Players are matched through Wikidata (FIDE id, P1440) which is part of this source. Only commercial-use, modification-allowed licences are accepted; CC BY-SA is accepted (decision 2026-11-13). See docs/sources/I1-wikimedia-commons.md."
+      },
+      "roles": ["player", "event", "venue", "generic"],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 500,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": {}
+      }
+    },
+    {
+      "id": "I2",
+      "kind": "image",
+      "name": "Flickr Creative Commons",
+      "enabled": true,
+      "access": {
+        "method": "api",
+        "baseUrl": "https://www.flickr.com/services/api/",
+        "auth": "token",
+        "termsUrl": "https://www.flickr.com/services/api/tos/"
+      },
+      "policy": {
+        "status": "pending_verification",
+        "automatedRetrieval": false,
+        "attributionRequired": true,
+        "notes": "Needs an API key; commercial use of the API needs Flickr's approval. Not requested yet."
+      },
+      "roles": [],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 1000,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": {}
+      }
+    },
+    {
+      "id": "I3",
+      "kind": "image",
+      "name": "Unsplash",
+      "enabled": true,
+      "access": {
+        "method": "api",
+        "baseUrl": "https://api.unsplash.com/",
+        "auth": "token",
+        "termsUrl": "https://unsplash.com/api-terms"
+      },
+      "policy": {
+        "status": "pending_verification",
+        "automatedRetrieval": false,
+        "attributionRequired": true,
+        "notes": "API rules expect images to be loaded from Unsplash and downloads to be reported; this conflicts with keeping our own stored copy. Generic imagery only. Not approved."
+      },
+      "roles": [],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 1000,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": {}
+      }
+    },
+    {
+      "id": "I4",
+      "kind": "image",
+      "name": "Pexels",
+      "enabled": true,
+      "access": {
+        "method": "api",
+        "baseUrl": "https://api.pexels.com/",
+        "auth": "token",
+        "termsUrl": "https://www.pexels.com/api/documentation/"
+      },
+      "policy": {
+        "status": "pending_verification",
+        "automatedRetrieval": false,
+        "attributionRequired": true,
+        "notes": "Needs an API key and a visible credit to Pexels. Generic imagery only. Not approved."
+      },
+      "roles": [],
+      "limits": {
+        "maxConcurrent": 1,
+        "minIntervalMs": 1000,
+        "rateLimitBackoffMs": 60000,
+        "timeoutMs": 30000,
+        "maxRetries": 2,
+        "cacheTtlSeconds": {}
+      }
+    }
   ]
 }

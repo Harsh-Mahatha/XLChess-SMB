@@ -8,3 +8,4 @@ export * from './story/index.js';
 export * from './ai/index.js';
 export * from './generation/index.js';
 export * from './worker/index.js';
+export * from './images/index.js';
