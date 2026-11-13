@@ -59,9 +59,9 @@ insert into smb.media_assets (id, kind, bucket, path, sha256, mime, size_bytes, 
    'text/html', 1200, null, null, null, null, null, null, null, null, '00000000-0000-4000-8000-000000000401'),
   ('00000000-0000-4000-8000-000000000702', 'original', 'originals', 'seed/photo.jpg', encode(sha256('seed-original'::bytea), 'hex'),
    'image/jpeg', 500000, 4000, 3000, 'https://example.org/photo.jpg', 'https://example.org/photo-page', 'I1', null, null, null, '00000000-0000-4000-8000-000000000401'),
-  ('00000000-0000-4000-8000-000000000703', 'derived', 'renders', 'seed/photo-crop.jpg', encode(sha256('seed-derived'::bytea), 'hex'),
+  ('00000000-0000-4000-8000-000000000703', 'derived', 'derived', 'seed/photo-crop.jpg', encode(sha256('seed-derived'::bytea), 'hex'),
    'image/jpeg', 120000, 1200, 675, null, null, null, '00000000-0000-4000-8000-000000000702',
-   '{"crop":{"x":100,"y":200,"w":3200,"h":1800},"resize":{"w":1200,"h":675}}', null, '00000000-0000-4000-8000-000000000401'),
+   '{"spec":1,"crop":{"left":100,"top":200,"width":3200,"height":1800},"resize":{"width":1200,"height":675,"fit":"inside"},"encode":{"format":"jpeg","quality":90}}', null, '00000000-0000-4000-8000-000000000401'),
   ('00000000-0000-4000-8000-000000000704', 'render', 'renders', 'seed/game7.png', encode(sha256('seed-render'::bytea), 'hex'),
    'image/png', 300000, 1200, 675, null, null, null, '00000000-0000-4000-8000-000000000703', null, 'game-result@1', '00000000-0000-4000-8000-000000000401');
 

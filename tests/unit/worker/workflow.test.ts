@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  assertTextOnlyWorkflow,
   buildWorkflow,
+  WorkflowNotAllowedError,
+  workflowFingerprint,
   requiredModelFiles,
   type Workflow,
 } from '../../../apps/worker/src/runtimes/workflow.js';
@@ -66,5 +69,50 @@ describe('requiredModelFiles', () => {
       { folder: 'text_encoders', file: 'qwen_3_4b.safetensors' },
       { folder: 'vae', file: 'ae.safetensors' },
     ]);
+  });
+});
+
+describe('assertTextOnlyWorkflow (a real photograph can never be an input)', () => {
+  const withNode = (id: string, class_type: string, inputs: Record<string, unknown> = {}) => {
+    const wf = structuredClone(template);
+    wf[id] = { class_type, inputs };
+    return wf;
+  };
+
+  it('accepts the repo workflow', () => {
+    expect(() => assertTextOnlyWorkflow(template)).not.toThrow();
+  });
+
+  it.each([
+    'LoadImage',
+    'LoadImageMask',
+    'VAEEncode',
+    'VAEEncodeForInpaint',
+    'ImageScale',
+    'ControlNetApply',
+    'IPAdapter',
+  ])('refuses a %s node', (type) => {
+    expect(() => assertTextOnlyWorkflow(withNode('99', type))).toThrow(WorkflowNotAllowedError);
+    expect(() => buildWorkflow(withNode('99', type), params)).toThrow(/only text-to-image nodes/);
+  });
+
+  it('refuses a sampler that does not start from the empty latent', () => {
+    const wf = structuredClone(template);
+    wf['8']!.inputs.latent_image = ['4', 0];
+    expect(() => assertTextOnlyWorkflow(wf)).toThrow(/empty latent/);
+  });
+
+  it('refuses partial denoise, which would keep part of an input', () => {
+    const wf = structuredClone(template);
+    wf['8']!.inputs.denoise = 0.6;
+    expect(() => assertTextOnlyWorkflow(wf)).toThrow(/full denoise/);
+  });
+
+  it('fingerprints a workflow independently of key order', () => {
+    const reordered = Object.fromEntries(Object.entries(template).reverse()) as Workflow;
+    expect(workflowFingerprint(reordered)).toBe(workflowFingerprint(template));
+    expect(workflowFingerprint(withNode('99', 'SaveImage'))).not.toBe(
+      workflowFingerprint(template),
+    );
   });
 });

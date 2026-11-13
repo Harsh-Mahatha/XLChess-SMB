@@ -14,7 +14,9 @@
     "research:build": "tsx --env-file-if-exists=../../.env src/research/cli.ts",
     "story:select": "tsx --env-file-if-exists=../../.env src/story/cli.ts",
     "candidates:generate": "tsx --env-file-if-exists=../../.env src/generation/cli.ts",
-    "images:discover": "tsx --env-file-if-exists=../../.env src/images/cli.ts"
+    "images:discover": "tsx --env-file-if-exists=../../.env src/images/cli.ts",
+    "assets:verify": "tsx --env-file-if-exists=../../.env src/assets/cli.ts verify",
+    "assets:purge": "tsx --env-file-if-exists=../../.env src/assets/cli.ts purge"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.0",
@@ -24,6 +26,7 @@
     "express": "^5.0.1",
     "pino": "^9.6.0",
     "pino-http": "^10.3.0",
+    "sharp": "^0.34.5",
     "zod": "^3.24.1"
   },
   "devDependencies": {

@@ -100,6 +100,8 @@ model media_assets {
   job_id                                                        String?             @db.Uuid
   retention_until                                               DateTime?           @db.Timestamptz(6)
   deleted_at                                                    DateTime?           @db.Timestamptz(6)
+  generation                                                    Json?
+  purged_at                                                     DateTime?           @db.Timestamptz(6)
   created_at                                                    DateTime            @default(now()) @db.Timestamptz(6)
   image_candidates                                              image_candidates[]
   data_sources                                                  data_sources?       @relation(fields: [image_source_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -110,6 +112,7 @@ model media_assets {
   media_licenses_media_licenses_asset_idTomedia_assets          media_licenses[]    @relation("media_licenses_asset_idTomedia_assets")
   media_licenses_media_licenses_evidence_asset_idTomedia_assets media_licenses[]    @relation("media_licenses_evidence_asset_idTomedia_assets")
   revision_assets                                               revision_assets[]
+  asset_integrity_checks                                        asset_integrity_checks[]
 
   @@unique([bucket, path])
   @@index([parent_asset_id], map: "media_assets_parent")
@@ -554,6 +557,7 @@ enum asset_kind {
   derived
   render
   evidence
+  generated
 
   @@schema("smb")
 }
@@ -647,5 +651,22 @@ enum review_action_type {
   request_research
   comment
 
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model asset_integrity_checks {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  asset_id       String       @db.Uuid
+  check_kind     String
+  passed         Boolean
+  failures       String[]     @default([])
+  detail         Json         @default("{}")
+  engine         Json         @default("{}")
+  policy_version String
+  checked_at     DateTime     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  media_assets   media_assets @relation(fields: [asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([asset_id, checked_at(sort: Desc)], map: "asset_integrity_checks_asset")
   @@schema("smb")
 }

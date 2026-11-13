@@ -76,8 +76,9 @@ async function photo(
 async function derive(parent: string, n: number): Promise<string> {
   const id = randomUUID();
   await db.query(
-    `insert into smb.media_assets (id, kind, bucket, path, sha256, mime, parent_asset_id, transform)
-     values ($1, 'derived', 'renders', $2, $3, 'image/jpeg', $4, '{"crop":{"x":0,"y":0,"w":10,"h":10}}')`,
+    `insert into smb.media_assets (id, kind, bucket, path, sha256, mime, parent_asset_id, transform, width, height)
+     values ($1, 'derived', 'derived', $2, $3, 'image/jpeg', $4,
+       '{"spec":1,"crop":{"left":0,"top":0,"width":10,"height":10},"encode":{"format":"jpeg"}}', 10, 10)`,
     [id, `d/${n}-${id}.jpg`, (1000 + n).toString(16).padStart(64, '0'), parent],
   );
   return id;

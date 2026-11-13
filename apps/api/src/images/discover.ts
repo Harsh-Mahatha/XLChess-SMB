@@ -23,6 +23,7 @@ import {
 } from '../storage/index.js';
 import { ImageDownloadError, type ImageDownloader } from './download.js';
 import type { ImageSourceRuntime } from './registry.js';
+import { SharpPhotoInspector, type PhotoInspector } from './inspect.js';
 import { subjectsFromClaims } from './subjects.js';
 
 export class ImageNotReadyError extends Error {
@@ -45,6 +46,8 @@ export interface DiscoverDeps {
   runtimes: Map<string, ImageSourceRuntime>;
   store: ObjectStore;
   downloader: ImageDownloader;
+  /** Reads the real type and size of each file (Sharp by default). */
+  inspector?: PhotoInspector;
   /** CC BY-SA is accepted (decision of 2026-11-13). */
   allowShareAlike?: boolean;
   /** Photos kept per opportunity, and per subject. */
@@ -101,6 +104,9 @@ interface Fetched {
   bytes: Uint8Array;
   sha256: string;
   mime: ImageMime;
+  /** Measured from the file itself, not taken from the provider. */
+  width: number;
+  height: number;
 }
 
 type Db = Prisma.TransactionClient | PrismaClient;
@@ -251,6 +257,7 @@ export async function discoverImages(
   );
 
   // --- Fetch the best licensed photos -----------------------------------------------------------------
+  const inspector = deps.inspector ?? new SharpPhotoInspector();
   const maxPhotos = deps.maxPhotos ?? 3;
   const maxPerSubject = deps.maxPerSubject ?? 1;
   const perSubject = new Map<string, number>();
@@ -288,10 +295,25 @@ export async function discoverImages(
           'the file does not match the hash the provider published',
         );
       }
+      const facts = await inspector.inspect(file.bytes);
+      if (facts.mime !== mime) {
+        throw new ImageDownloadError('http_error', `the file is ${facts.mime}, not ${mime}`);
+      }
+      if (
+        facts.width < DEFAULT_PHOTO_SLOT.minWidth ||
+        facts.height < DEFAULT_PHOTO_SLOT.minHeight
+      ) {
+        throw new ImageDownloadError(
+          'http_error',
+          `the file is ${facts.width}x${facts.height}, below the ${DEFAULT_PHOTO_SLOT.minWidth}x${DEFAULT_PHOTO_SLOT.minHeight} minimum (the provider said ${a.candidate.width}x${a.candidate.height})`,
+        );
+      }
       fetched.set(candidateKey(a.candidate), {
         bytes: file.bytes,
         sha256: sha256Hex(file.bytes),
         mime,
+        width: facts.width,
+        height: facts.height,
       });
       perSubject.set(sk, (perSubject.get(sk) ?? 0) + 1);
     } catch (err) {
@@ -359,8 +381,8 @@ export async function discoverImages(
               sha256: file.sha256,
               mime: file.mime,
               size_bytes: file.bytes.byteLength,
-              width: c.width,
-              height: c.height,
+              width: file.width,
+              height: file.height,
               source_url: c.imageUrl,
               source_page_url: c.pageUrl,
               image_source_id: c.sourceId,
@@ -441,6 +463,7 @@ export async function discoverImages(
           score_detail: {
             ...a.score,
             ...(download ? { download } : {}),
+            ...(file ? { inspected: { width: file.width, height: file.height } } : {}),
           } as unknown as Prisma.InputJsonValue,
           chosen: Boolean(assetId),
           evidence: c.evidence as unknown as Prisma.InputJsonValue,
@@ -465,8 +488,8 @@ export async function discoverImages(
           shareAlike: a.assessment.shareAlike,
           score: a.score.score,
           sha256: fetched.get(key)!.sha256,
-          width: c.width,
-          height: c.height,
+          width: fetched.get(key)!.width,
+          height: fetched.get(key)!.height,
         });
       }
     }
