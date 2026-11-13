@@ -18,9 +18,14 @@ import {
   type ImageDownloader,
   type ImageSourceAdapter,
   type ImageSourceRuntime,
+  type PhotoInspector,
 } from '../../../apps/api/src/images/index.js';
 import { RateLimiter } from '../../../apps/api/src/sources/limiter.js';
-import { InMemoryObjectStore, sha1Hex } from '../../../apps/api/src/storage/index.js';
+import {
+  InMemoryObjectStore,
+  sha1Hex,
+  sniffImageMime,
+} from '../../../apps/api/src/storage/index.js';
 import { freshDb, rows } from './harness.js';
 
 let pgc: pg.Client;
@@ -153,11 +158,21 @@ async function opportunity(
   return o!.id;
 }
 
+// The test files are a few bytes long, not real pictures; the Sharp inspector has its own tests.
+const stubInspector: PhotoInspector = {
+  inspect: async (bytes) => ({
+    mime: sniffImageMime(bytes) ?? 'image/jpeg',
+    width: 3000,
+    height: 2000,
+    orientation: 1,
+  }),
+};
+
 const make = (
   runtime: ReturnType<typeof fakeRuntime>,
   downloader: ImageDownloader,
   store = new InMemoryObjectStore(),
-) => ({ db: prisma, runtimes: runtime.runtimes, store, downloader });
+) => ({ db: prisma, runtimes: runtime.runtimes, store, downloader, inspector: stubInspector });
 
 beforeAll(async () => {
   pgc = await freshDb();

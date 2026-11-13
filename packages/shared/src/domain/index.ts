@@ -51,7 +51,7 @@ export type ReviewActionType = z.infer<typeof ReviewActionType>;
 export const ClaimVerification = z.enum(['unverified', 'single_source', 'verified', 'conflicting']);
 export type ClaimVerification = z.infer<typeof ClaimVerification>;
 
-export const AssetKind = z.enum(['original', 'derived', 'render', 'evidence']);
+export const AssetKind = z.enum(['original', 'derived', 'render', 'evidence', 'generated']);
 export type AssetKind = z.infer<typeof AssetKind>;
 
 export const LicenceDecision = z.enum(['accepted', 'rejected']);

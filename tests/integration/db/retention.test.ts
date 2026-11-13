@@ -17,8 +17,8 @@ beforeAll(async () => {
     [ORPHAN_IMAGE, PINNED_IMAGE, hex('9')],
   );
   await db.query(
-    `insert into smb.media_assets (id, kind, bucket, path, sha256, mime, template_version)
-     values ($1, 'render', 'renders', 'orphan.png', $2, 'image/png', 'game-result@1')`,
+    `insert into smb.media_assets (id, kind, bucket, path, sha256, mime, template_version, width, height)
+     values ($1, 'render', 'renders', 'orphan.png', $2, 'image/png', 'game-result@1', 1200, 675)`,
     [ORPHAN_RENDER, hex('8')],
   );
 });
