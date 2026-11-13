@@ -4,6 +4,9 @@ import sharp from 'sharp';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
 import {
+  AssetIntegrityError,
+  assertAssetsIntact,
+  ensureAssetsIntact,
   DeriveError,
   deriveAsset,
   verifyAsset,
@@ -497,5 +500,29 @@ describe('verifyAsset', () => {
     await expect(verifyAsset(deps, ID.assetRender)).rejects.toThrow(
       /no standalone integrity check/,
     );
+  });
+});
+
+describe('publish-time guard', () => {
+  it('passes intact assets, and stops the post when a file changed after it was checked', async () => {
+    const o = await original();
+    const d = await deriveAsset(deps, { parentId: o.id, transform: CROP });
+    await expect(ensureAssetsIntact(deps, [d.assetId])).resolves.toBeUndefined();
+    await expect(assertAssetsIntact(prisma, [o.id, d.assetId])).resolves.toBeUndefined();
+
+    // The photograph is swapped in Storage after it was approved.
+    store.objects.set(`originals/${o.path}`, {
+      bytes: await syntheticPhoto(1600, 1000, 'png'),
+      contentType: 'image/jpeg',
+    });
+    // The recorded checks still say "fine" until someone looks again...
+    await expect(assertAssetsIntact(prisma, [d.assetId])).resolves.toBeUndefined();
+    // ...which is why publishing re-checks against the files as they are now.
+    await expect(ensureAssetsIntact(deps, [d.assetId])).rejects.toBeInstanceOf(AssetIntegrityError);
+    await expect(assertAssetsIntact(prisma, [d.assetId])).rejects.toThrow(/failed/);
+  });
+
+  it('stops an asset that was never checked', async () => {
+    await expect(assertAssetsIntact(prisma, [ID.assetDerived])).rejects.toThrow(/not been/);
   });
 });

@@ -353,10 +353,10 @@ Defaults live in `smb.retention_policies` and can be edited:
 | `unused_render` | 30 days | Same for rendered graphics. |
 | `job_payload` | 30 days | Payload and result of finished jobs are cleared. The row stays. |
 
-Anything used by an approved or published revision, its ancestor originals, and licence evidence are never touched. The function only marks rows. Removing the files from Storage and running it on a schedule belong to 1.9 and 1.17.
+Anything used by an approved or published revision, its ancestor originals, and licence evidence are never touched. The function only marks rows. Removing the files from Storage is `purgeExpiredAssets` (1.9); running it on a schedule belongs to 1.17.
 
 ### Deferred to later modules
-`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), the derived and render Storage buckets (1.9; the `originals` and `evidence` buckets came with 1.8), and the job runner and lease reaper (1.17).
+`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), the derived, render and generated Storage buckets (done in 1.9; the `originals` and `evidence` buckets came with 1.8), and the job runner and lease reaper (1.17).
 
 ---
 
@@ -584,8 +584,42 @@ All reasons that apply are stored, not just the first. The credit is `Photo: {au
 **Dev tools.** `npm run images:discover -- --opportunity <id> [--store supabase|memory] [--reject-share-alike]`. `SMB_LIVE_SOURCE_TESTS=1 npx vitest run tests/unit/images/live.test.ts` checks the real Wikimedia APIs. Settings: `SMB_CONTACT` (added to the User-Agent; Wikimedia asks for a way to reach the operator) and `IMAGE_ALLOW_SHARE_ALIKE`.
 
 **Known gaps.**
-- Width and height come from the provider; Sharp-based verification and the permitted-transform checks are 1.9.
+- ~~Width and height come from the provider~~ Done in 1.9: Sharp measures the real type and size at download, and the permitted-transform checks exist.
 - A Commons *category* can contain signatures, group photos or unrelated pictures of other people. They score below the Wikidata portrait, and the reviewer sees every photo, but the match is not proof the player is shown. Treat `category` photos with care when composing (1.10).
 - If a run finds candidates but none is chosen, that result is stored and a rerun returns it. Add a refresh path in 1.17 if retries are wanted.
 - The manager has not yet answered on I2 to I4 or on the CC BY-SA legal question; both are config changes, not code.
 - Photo selection by composition (a vision model) is not in V1.
+
+---
+
+## Original photo integrity and asset storage (module 1.9)
+
+Code: contracts in `packages/shared/src/images/{transform,integrity}.ts`; the pipeline, checker and purge in `apps/api/src/assets/`; the ingest check in `apps/api/src/images/inspect.ts`; the worker guard in `apps/worker/src/runtimes/workflow.ts`. Migrations `20261103001400` and `20261103001500`.
+
+**The rule.** A real photograph is never regenerated or edited. It may only be cropped, rotated, resized and re-encoded, and anyone can check that. The photograph in a post is traceable to the file that was downloaded: original (hash) -> derived image (recorded transform) -> render (photo area compared pixel by pixel).
+
+**Permitted transforms** (`PhotoTransform`, `TRANSFORM_SPEC_VERSION` 1). The pipeline always runs in this order: camera rotation (EXIF orient) -> `crop` -> `rotate` -> `resize` (`inside` or `cover`, never a stretch) -> `encode` (jpeg, png or webp; metadata is dropped). Every stage passes raw sRGB pixels to the next, so only the final encode is lossy. There is no field for colour, blur, sharpen, flip, compositing or any model, and the schema is strict, so such a step cannot be recorded or requested. The database repeats the check (`smb.transform_is_permitted`, a CHECK on derived assets). Placing the photo in a frame and arranging it with other elements is composition (1.10).
+
+**Ingest.** Discovery (1.8) now runs Sharp on each download: the file must decode, match the type its header and the provider claim, be a single frame, stay under 100 megapixels, and be at least 1200x675 *as measured*, not as the provider said. The stored original is the bytes as downloaded; its row holds the real, orientation-corrected size.
+
+**Asset kinds and storage.** Content-addressed (`<sha256>.<ext>`) private buckets, one per kind: `originals`, `derived`, `renders`, `evidence`, `generated`. The database enforces the bucket for each kind, that a derived asset or render has a size, and that only a derived image or render has a parent. A derived image or render can only be cut from an original or another derived image, never from a render, evidence or generated asset.
+
+**Making a derived image** (`deriveAsset`). Re-reads the parent's file and checks its hash (a damaged or swapped original is never used), validates the transform, runs the pipeline, stores the result and records a first integrity check with the Sharp and libvips versions. The same parent and transform return the stored asset.
+
+**Integrity checks** (`verifyOriginal`, `verifyDerived`, `verifyRegion`; `npm run assets:verify`). Every run is appended to `asset_integrity_checks` with its measurements, engine and `INTEGRITY_POLICY_VERSION`.
+
+| Check | Passes when | Failure codes |
+|---|---|---|
+| Original | file exists, hashes to the recorded sha-256, is named after it, decodes, size matches | `file_missing`, `hash_mismatch`, `path_mismatch`, `not_an_image`, `dimension_mismatch` |
+| Derived | transform permitted, parent intact (recursively), derived file matches its hash, and rebuilding it from the parent gives the same bytes **or** the same picture within tolerance | `transform_not_permitted`, `parent_changed`, `hash_mismatch`, `dimension_mismatch`, `pixel_mismatch`, `local_edit` |
+| Render region | the photo area equals the named parent scaled into that rectangle, same tolerance | as derived, plus `parent_changed` if the render does not name that photo |
+
+The tolerance exists because encoders differ across libvips versions and CPUs. It has two parts: whole-image PSNR of at least 35 dB, and no 16x16 block with a mean difference over 6 or more than 10% strongly different pixels, so a retouched face cannot hide in an average. The tests cover a recolour, a brightened and a blurred face, a pasted patch, a mirrored picture, a wrong crop, a swapped file and a swapped original. **Known limit:** an edit smaller than the thresholds (a mean change under 6 levels in a block) is not detected by pixels alone; the exact-rebuild path and the hash chain still hold for anything made by SMB.
+
+**Using them.** `smb.asset_integrity_problem(asset)` returns why an asset is not proven (null when it is): the newest check of each kind decides. Publishing (1.13) should call `ensureAssetsIntact`, which re-checks against the files as they are now and then asserts, next to `assertAssetsLicensed` from 1.8. 1.10 must compose with Sharp, name the photograph as the render's parent and call `verifyRegion` with the photo rectangle.
+
+**Generated (AI-made) assets.** Decorative backgrounds from Z-Image-Turbo are stored with `registerGeneratedAsset` as kind `generated` with a `generation` record (`input: 'text_only'`, model, prompt, seed, workflow fingerprint). The database refuses a generated asset with a parent or source URL, and refuses to derive anything from one, so AI output can sit beside a photograph but not replace or alter it. On the worker, `assertTextOnlyWorkflow` (run by `buildWorkflow`) refuses any ComfyUI node that can load or encode an image (`LoadImage`, `VAEEncode`, ...), any sampler that does not start from the empty latent, and denoise below 1. Nothing in SMB sends a photograph to the image model.
+
+**Retention.** `purgeExpiredAssets` (`npm run assets:purge`) runs `smb.apply_retention` and then removes the files of every asset it marked deleted, stamping `purged_at`. Rows are never deleted. It skips anything protected (used by an approved or published revision, its ancestors, licence evidence), and a failed removal is retried on the next run. Unused generated images expire with the other unused images. Run it on a schedule in 1.17.
+
+**Not in 1.9.** Rendering and the photo rectangle itself (1.10), calling `ensureAssetsIntact` at publish time (1.13), the schedule (1.17), and a vision check that a photo really shows the named person.

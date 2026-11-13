@@ -32,6 +32,8 @@
     "story:select": "npm run story:select -w @smb/api --",
     "candidates:generate": "npm run candidates:generate -w @smb/api --",
     "images:discover": "npm run images:discover -w @smb/api --",
+    "assets:verify": "npm run assets:verify -w @smb/api --",
+    "assets:purge": "npm run assets:purge -w @smb/api --",
     "installer:package": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/build-package.ps1",
     "installer:test": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Import-Module Pester; Invoke-Pester installer/tests\""
   },

@@ -4,3 +4,4 @@ export * from './derive.js';
 export * from './verify.js';
 export * from './purge.js';
 export * from './generated.js';
+export * from './guard.js';
