@@ -19,6 +19,10 @@ const EnvSchema = z.object({
   SMB_PUBLISH_MODE: z.enum(['dry_run', 'sandbox', 'live']).default('dry_run'),
   SMB_ALLOW_LIVE_PUBLISH: bool.default('false'),
   SMB_AI_PROVIDER: z.enum(['stub', 'worker']).default('stub'),
+  /** Appended to the User-Agent so providers such as Wikimedia can contact the operator. A URL or an address. */
+  SMB_CONTACT: z.string().optional(),
+  /** Accept CC BY-SA photos (decision of 2026-11-13). Set to false to reject them. */
+  IMAGE_ALLOW_SHARE_ALIKE: bool.default('true'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
