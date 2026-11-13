@@ -356,7 +356,7 @@ Defaults live in `smb.retention_policies` and can be edited:
 Anything used by an approved or published revision, its ancestor originals, and licence evidence are never touched. The function only marks rows. Removing the files from Storage and running it on a schedule belong to 1.9 and 1.17.
 
 ### Deferred to later modules
-`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), Storage buckets (1.9), and the job runner and lease reaper (1.17).
+`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), the derived and render Storage buckets (1.9; the `originals` and `evidence` buckets came with 1.8), and the job runner and lease reaper (1.17).
 
 ---
 
@@ -367,7 +367,7 @@ Anything used by an approved or published revision, its ancestor originals, and 
 | File | Purpose |
 |---|---|
 | `taxonomy.json` | The 18 categories and 134 subtypes. A subtype id is `<category>.<n>` in the order of the Feature Definition, so World Championship is `1.1`. Ids are permanent once a config uses them. |
-| `sources.json` | Approved source registry: `D1`–`D5` data, `I1`–`I4` image. A data source carries its reliability level, access method, usage policy (`approved` / `pending_verification` / `blocked`), capabilities and rate/cache limits (1.4). Image-source details come with 1.8. |
+| `sources.json` | Approved source registry: `D1`–`D5` data, `I1`–`I4` image. A data source carries its reliability level, access method, usage policy (`approved` / `pending_verification` / `blocked`), capabilities and rate/cache limits (1.4). An image source has the same shape (access, policy, limits) with `roles` (`player`, `event`, `venue`, `generic`) in place of capabilities (1.8). |
 | `channels.json` | Per-channel limits and an `enabled` switch. Only X is enabled in V1. A post type may list disabled channels; they are skipped at publish time. |
 | `post-types/<id>-<name>.json` | One file per configured subtype. Only subtypes with a file can run. Files starting with `_` are ignored. |
 
@@ -549,3 +549,43 @@ Warnings (`name_variant`, `prediction`, `angle_not_cited`) are stored but do not
 **Dev tool:** `npm run candidates:generate -- --opportunity <id> [--provider stub|ollama] [--model qwen3:8b]`.
 
 **Not yet done (needs the home PC):** generating with a real model (Qwen3 8B on the RTX 4070), tuning the prompts, and measuring timings and VRAM. The worker protocol (job claim, heartbeats, device tokens) and installer have no module yet; when they exist, a `candidates_generate` job carries `GenerationInput` and the worker returns a `GenerationResult`, which the server stores through `saveGeneration` unchanged.
+
+
+---
+
+## Image discovery and licence checks (module 1.8)
+
+Code: contracts, licence rules and scoring in `packages/shared/src/images/`; sources, storage and the service in `apps/api/src/{images,storage}/`. Migration `20261103001300`. Source note: `docs/sources/I1-wikimedia-commons.md`.
+
+**Decisions (2026-11-13).** Only **I1 Wikimedia Commons** is live. I2 Flickr, I3 Unsplash and I4 Pexels stay `pending_verification` with no roles, so they are never called (their terms are written up in `config/sources.json` and the I1 note). **CC BY-SA is accepted.** Wikidata (FIDE id, property P1440) is part of the I1 lookup.
+
+**Flow** (`discoverImages(deps, opportunityId)`, opportunity `generating`): load the pinned config (`imageRules.need` of `none` returns `not_needed`) → build subjects from the research claims (`subjectsFromClaims`: the game's players by FIDE id, the event, the venue) → search each approved source in the post type's `imageSources` order, for the roles it allows → `assessLicence` and `scoreCandidate` for every candidate → download only the best licensed photos, one per subject and three in all → store → record. A repeat call returns the stored answer.
+
+**Finding people.** A player is found by FIDE id: Wikidata item with `P1440`, then its image (`P18`, `wikidata_image`) and Commons category (`P373`, `category`). No FIDE id, or zero or several Wikidata items, means no photo. A name search never selects a photo of a person (`weak_identity`). Events and venues use a keyword file search (`search`).
+
+**Licence rules** (`assessLicence`, pure code, `LICENCE_POLICY_VERSION`). Fail closed: a photo is accepted only if its licence is understood, allows commercial use and modification, and every duty can be met.
+
+| Accepted | Rejected (code) |
+|---|---|
+| CC0, public domain, CC BY, CC BY-SA (`share_alike` recorded, obligation text saved) | `non_commercial`, `no_derivatives` (SMB crops and resizes), `gfdl_only`, `unknown_licence`, `unknown_version`, `licence_mismatch` (name and link disagree), `non_free`, `personality_rights`, `restricted_use`, `no_author` (credit required, none recorded), `share_alike_not_allowed` (when `IMAGE_ALLOW_SHARE_ALIKE=false`) |
+
+All reasons that apply are stored, not just the first. The credit is `Photo: {author} / Wikimedia Commons, {licence}` (copyright holder if there is no author).
+
+**Ranking** (`scoreCandidate`, `SCORER_VERSION`): identity 0.5, resolution 0.25, shape 0.15, recency 0.1. A photo must be JPEG, PNG or WebP and at least 1200x675 until the templates (1.10) declare their slots.
+
+**Download checks.** HTTPS only, host must be in the adapter's `downloadHosts` (`upload.wikimedia.org`), no redirects, 50 MiB cap. The bytes must sniff as the type the provider declared and match the SHA-1 Wikimedia publishes. Any failure drops that photo and the next best is tried.
+
+**Records.** `image_candidates` logs every candidate: decision, rejection codes, score breakdown, the provider's raw licence facts and the rule and scorer versions. A rejected photo is logged but never downloaded or stored. A chosen photo becomes an `original` in the private `originals` bucket at `<sha256>.<ext>`, a licence row in `media_licenses` (type, version, URL, commercial and modification flags, credit, share-alike, obligations, verification time, policy version) and an `evidence` file (`evidence/<sha256>.json`: the raw provider data and the assessment). Re-checking an already stored photo adds a licence row; **the newest row decides.**
+
+**Unusable images cannot enter publication.** `smb.asset_licence_problem(asset)` judges an asset by its original photograph: the newest licence must be `accepted`, commercial, modification-allowing and credited, and the file not deleted. A trigger on `revision_assets` refuses anything else, including any crop or render derived from the photo. Publishing (1.13) calls `assertAssetsLicensed` before posting, so a licence withdrawn later still stops the post. A render with no parent contains no photograph; **a render that contains one must name it as its parent (1.10).**
+
+**Failure behaviour.** If every search failed and nothing was found, `ImageDiscoveryError` is thrown (retry later) instead of reporting "no photo". When nothing is licensed the result is `none_found`; with `imageRules.need: required` it also sets `needsHuman`, and with `preferred` the pipeline uses the template's no-photo variant.
+
+**Dev tools.** `npm run images:discover -- --opportunity <id> [--store supabase|memory] [--reject-share-alike]`. `SMB_LIVE_SOURCE_TESTS=1 npx vitest run tests/unit/images/live.test.ts` checks the real Wikimedia APIs. Settings: `SMB_CONTACT` (added to the User-Agent; Wikimedia asks for a way to reach the operator) and `IMAGE_ALLOW_SHARE_ALIKE`.
+
+**Known gaps.**
+- Width and height come from the provider; Sharp-based verification and the permitted-transform checks are 1.9.
+- A Commons *category* can contain signatures, group photos or unrelated pictures of other people. They score below the Wikidata portrait, and the reviewer sees every photo, but the match is not proof the player is shown. Treat `category` photos with care when composing (1.10).
+- If a run finds candidates but none is chosen, that result is stored and a rerun returns it. Add a refresh path in 1.17 if retries are wanted.
+- The manager has not yet answered on I2 to I4 or on the CC BY-SA legal question; both are config changes, not code.
+- Photo selection by composition (a vision model) is not in V1.
