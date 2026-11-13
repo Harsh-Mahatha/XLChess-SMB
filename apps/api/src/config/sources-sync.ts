@@ -20,30 +20,23 @@ export async function syncSources(
     await tx.$executeRaw`select pg_advisory_xact_lock(hashtext('smb.data_sources'))`;
     const results: SourceSyncResult[] = [];
     for (const s of registry.sources) {
-      const wanted =
-        s.kind === 'data'
-          ? {
-              kind: s.kind,
-              name: s.name,
-              base_url: s.access.baseUrl ?? null,
-              terms_url: s.access.termsUrl ?? null,
-              enabled: s.enabled,
-              config: {
+      const wanted = {
+        kind: s.kind,
+        name: s.name,
+        base_url: s.access.baseUrl ?? null,
+        terms_url: s.access.termsUrl ?? null,
+        enabled: s.enabled,
+        config:
+          s.kind === 'data'
+            ? {
                 reliability: s.reliability,
                 access: s.access,
                 policy: s.policy,
                 capabilities: s.capabilities,
                 limits: s.limits,
-              },
-            }
-          : {
-              kind: s.kind,
-              name: s.name,
-              base_url: null,
-              terms_url: null,
-              enabled: s.enabled,
-              config: {},
-            };
+              }
+            : { access: s.access, policy: s.policy, roles: s.roles, limits: s.limits },
+      };
 
       const existing = await tx.data_sources.findUnique({ where: { id: s.id } });
       const unchanged =

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Channel } from '../domain/index.js';
+import { IMAGE_ROLES } from '../images/types.js';
 
 /** What a data source adapter can be asked for. Mirrors the ChessDataSource methods. */
 export const SourceCapability = z.enum(['events', 'players', 'games', 'news']);
@@ -72,15 +73,24 @@ const DataSourceFields = z
   .strict();
 export type DataSourceEntry = z.infer<typeof DataSourceFields>;
 
-/** Image sources keep the minimal shape until module 1.8 extends them. */
+/**
+ * Image sources (module 1.8) follow the same fail-closed rule as data sources: only an approved source
+ * with automated retrieval on may have roles, and a source without roles is never called.
+ */
 const ImageSourceFields = z
   .object({
     id: z.string().regex(/^I\d+$/),
     kind: z.literal('image'),
     name: z.string().min(1),
     enabled: z.boolean(),
+    access: SourceAccess,
+    policy: SourcePolicy,
+    /** What the source may be searched for. Generic-only sources must not be used for named people. */
+    roles: z.array(z.enum(IMAGE_ROLES)),
+    limits: SourceLimits,
   })
   .strict();
+export type ImageSourceEntry = z.infer<typeof ImageSourceFields>;
 
 export const SourceEntry = z.discriminatedUnion('kind', [DataSourceFields, ImageSourceFields]);
 export type SourceEntry = z.infer<typeof SourceEntry>;
@@ -96,16 +106,20 @@ export const SourcesRegistry = z
       ctx.addIssue({ code: 'custom', message: 'source ids must be unique' });
     }
     for (const s of r.sources) {
-      if (s.kind !== 'data') continue;
       const bad = (msg: string) => ctx.addIssue({ code: 'custom', message: `${s.id}: ${msg}` });
-      if (new Set(s.capabilities).size !== s.capabilities.length) bad('duplicate capability');
-      if (s.capabilities.length > 0) {
-        if (s.policy.status !== 'approved') bad('capabilities require policy.status "approved"');
-        if (!s.policy.automatedRetrieval) bad('capabilities require policy.automatedRetrieval');
-        if (s.access.method === 'none') bad('capabilities require an access method');
+      const abilities = s.kind === 'data' ? s.capabilities : s.roles;
+      const noun = s.kind === 'data' ? 'capabilities' : 'roles';
+      if (new Set(abilities).size !== abilities.length)
+        bad(s.kind === 'data' ? 'duplicate capability' : 'duplicate role');
+      if (abilities.length > 0) {
+        if (s.policy.status !== 'approved') bad(`${noun} require policy.status "approved"`);
+        if (!s.policy.automatedRetrieval) bad(`${noun} require policy.automatedRetrieval`);
+        if (s.access.method === 'none') bad(`${noun} require an access method`);
       }
       if (s.policy.status === 'approved') {
-        if (s.reliability === 'unverified') bad('an unverified source cannot be approved');
+        if (s.kind === 'data' && s.reliability === 'unverified') {
+          bad('an unverified source cannot be approved');
+        }
         if (!s.policy.verifiedAt) bad('an approved source needs policy.verifiedAt');
         if (!s.access.termsUrl) bad('an approved source needs access.termsUrl');
       }

@@ -26,17 +26,18 @@ model audit_log {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model data_sources {
-  id             String           @id
-  kind           String
-  name           String
-  base_url       String?
-  terms_url      String?
-  enabled        Boolean          @default(true)
-  config         Json             @default("{}")
-  created_at     DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime         @default(now()) @db.Timestamptz(6)
-  media_assets   media_assets[]
-  source_records source_records[]
+  id               String             @id
+  kind             String
+  name             String
+  base_url         String?
+  terms_url        String?
+  enabled          Boolean            @default(true)
+  config           Json               @default("{}")
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  image_candidates image_candidates[]
+  media_assets     media_assets[]
+  source_records   source_records[]
 
   @@schema("smb")
 }
@@ -100,6 +101,7 @@ model media_assets {
   retention_until                                               DateTime?           @db.Timestamptz(6)
   deleted_at                                                    DateTime?           @db.Timestamptz(6)
   created_at                                                    DateTime            @default(now()) @db.Timestamptz(6)
+  image_candidates                                              image_candidates[]
   data_sources                                                  data_sources?       @relation(fields: [image_source_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   jobs                                                          jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities                                            post_opportunities? @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -117,8 +119,8 @@ model media_assets {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model media_licenses {
-  id                                                          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  asset_id                                                    String           @db.Uuid
+  id                                                          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  asset_id                                                    String             @db.Uuid
   original_url                                                String
   source_page_url                                             String?
   photographer                                                String?
@@ -130,17 +132,20 @@ model media_licenses {
   modifications_allowed                                       Boolean
   attribution_required                                        Boolean
   attribution_text                                            String?
-  share_alike                                                 Boolean          @default(false)
+  share_alike                                                 Boolean            @default(false)
   other_obligations                                           String?
-  evidence_asset_id                                           String?          @db.Uuid
+  evidence_asset_id                                           String?            @db.Uuid
   evidence_note                                               String?
   decision                                                    licence_decision
   decision_reason                                             String?
-  verified_at                                                 DateTime         @db.Timestamptz(6)
+  verified_at                                                 DateTime           @db.Timestamptz(6)
   verified_by                                                 String
-  created_at                                                  DateTime         @default(now()) @db.Timestamptz(6)
-  media_assets_media_licenses_asset_idTomedia_assets          media_assets     @relation("media_licenses_asset_idTomedia_assets", fields: [asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  media_assets_media_licenses_evidence_asset_idTomedia_assets media_assets?    @relation("media_licenses_evidence_asset_idTomedia_assets", fields: [evidence_asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  created_at                                                  DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  policy_version                                              String?
+  rejection_codes                                             String[]           @default([])
+  image_candidates                                            image_candidates[]
+  media_assets_media_licenses_asset_idTomedia_assets          media_assets       @relation("media_licenses_asset_idTomedia_assets", fields: [asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  media_assets_media_licenses_evidence_asset_idTomedia_assets media_assets?      @relation("media_licenses_evidence_asset_idTomedia_assets", fields: [evidence_asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([asset_id], map: "media_licenses_asset")
   @@schema("smb")
@@ -248,6 +253,7 @@ model post_opportunities {
   not_after          DateTime?            @db.Timestamptz(6)
   created_at         DateTime             @default(now()) @db.Timestamptz(6)
   updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  image_candidates   image_candidates[]
   jobs               jobs[]
   media_assets       media_assets[]
   opportunity_events opportunity_events[]
@@ -394,9 +400,9 @@ model research_packages {
   created_at         DateTime           @default(now()) @db.Timestamptz(6)
   post_candidates    post_candidates[]
   research_claims    research_claims[]
-  story_selections   story_selections[]
   jobs               jobs?              @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  story_selections   story_selections[]
 
   @@unique([opportunity_id, version])
   @@schema("smb")
@@ -482,26 +488,64 @@ model source_records {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model story_selections {
-  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  opportunity_id      String              @db.Uuid
-  research_package_id String              @db.Uuid
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunity_id      String             @db.Uuid
+  research_package_id String             @db.Uuid
   outcome             String
   angle_id            String?
   fingerprint         String?
-  features            Json                @default("[]")
-  score               Decimal?            @db.Decimal(4, 3)
+  features            Json               @default("[]")
+  score               Decimal?           @db.Decimal(4, 3)
   reason              String
-  ranking             Json                @default("[]")
+  ranking             Json               @default("[]")
   selector_version    String
-  job_id              String?             @db.Uuid
-  created_at          DateTime            @default(now()) @db.Timestamptz(6)
-  jobs                jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  post_opportunities  post_opportunities  @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  research_packages   research_packages   @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  job_id              String?            @db.Uuid
+  created_at          DateTime           @default(now()) @db.Timestamptz(6)
   post_candidates     post_candidates[]
+  jobs                jobs?              @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities  post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  research_packages   research_packages  @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([opportunity_id, research_package_id])
   @@index([created_at(sort: Desc)], map: "story_selections_recent")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model image_candidates {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunity_id     String             @db.Uuid
+  image_source_id    String
+  external_id        String
+  title              String
+  page_url           String
+  image_url          String
+  mime               String
+  width              Int
+  height             Int
+  subject            Json
+  match_kind         String
+  decision           licence_decision
+  rejection_codes    String[]           @default([])
+  decision_reason    String?
+  eligible           Boolean
+  score              Decimal            @db.Decimal(5, 3)
+  score_detail       Json
+  chosen             Boolean            @default(false)
+  evidence           Json
+  policy_version     String
+  scorer_version     String
+  asset_id           String?            @db.Uuid
+  license_id         String?            @db.Uuid
+  created_at         DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  media_assets       media_assets?      @relation(fields: [asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  data_sources       data_sources       @relation(fields: [image_source_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  media_licenses     media_licenses?    @relation(fields: [license_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([opportunity_id, image_source_id, external_id])
+  @@index([asset_id], map: "image_candidates_asset")
+  @@index([opportunity_id], map: "image_candidates_opportunity")
   @@schema("smb")
 }
 
