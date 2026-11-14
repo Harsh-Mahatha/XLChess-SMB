@@ -1,0 +1,658 @@
+{
+  "schemaVersion": 1,
+  "id": "player-vs-player",
+  "aliases": [
+    "game-result"
+  ],
+  "name": "Player vs Player",
+  "version": "1.0.0",
+  "description": "Two framed player photographs on a split charcoal and navy background, with names, flags, ratings, a gold VS and an optional result. Also used as the game-result layout.",
+  "aspects": {
+    "16:9": {
+      "width": 1200,
+      "height": 675,
+      "background": "#26282b",
+      "elements": [
+        {
+          "id": "panel_right",
+          "type": "rect",
+          "x": 600,
+          "y": 0,
+          "w": 600,
+          "h": 675,
+          "fill": "#0e1930"
+        },
+        {
+          "id": "player_a",
+          "type": "text",
+          "required": true,
+          "bind": "player_a",
+          "x": 40,
+          "y": 22,
+          "w": 480,
+          "h": 88,
+          "font": "display",
+          "size": {
+            "max": 76,
+            "min": 34
+          },
+          "fill": "#c9a45c",
+          "align": "right",
+          "textCase": "upper",
+          "tracking": 0.01
+        },
+        {
+          "id": "vs_small",
+          "type": "text",
+          "literal": "VS",
+          "required": true,
+          "x": 526,
+          "y": 40,
+          "w": 148,
+          "h": 56,
+          "font": "display",
+          "size": {
+            "max": 40,
+            "min": 40
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "player_b",
+          "type": "text",
+          "required": true,
+          "bind": "player_b",
+          "x": 680,
+          "y": 22,
+          "w": 480,
+          "h": 88,
+          "font": "display",
+          "size": {
+            "max": 76,
+            "min": 34
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "textCase": "upper",
+          "tracking": 0.01
+        },
+        {
+          "id": "subtitle",
+          "type": "text",
+          "required": false,
+          "bind": "subtitle",
+          "x": 150,
+          "y": 108,
+          "w": 900,
+          "h": 44,
+          "font": "body-extrabold",
+          "size": {
+            "max": 30,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "center",
+          "textCase": "upper",
+          "tracking": 0.08
+        },
+        {
+          "id": "photo_a",
+          "type": "photo",
+          "x": 56,
+          "y": 168,
+          "w": 470,
+          "h": 392,
+          "required": false,
+          "anchor": {
+            "x": 0.5,
+            "y": 0.35
+          },
+          "frame": {
+            "colour": "#c9a45c",
+            "width": 2,
+            "gap": 5
+          }
+        },
+        {
+          "id": "photo_b",
+          "type": "photo",
+          "x": 674,
+          "y": 168,
+          "w": 470,
+          "h": 392,
+          "required": false,
+          "anchor": {
+            "x": 0.5,
+            "y": 0.35
+          },
+          "frame": {
+            "colour": "#c9a45c",
+            "width": 2,
+            "gap": 5
+          }
+        },
+        {
+          "id": "empty_a",
+          "type": "rect",
+          "x": 56,
+          "y": 168,
+          "w": 470,
+          "h": 392,
+          "fill": "#33363b",
+          "when": {
+            "photo": "photo_a",
+            "present": false
+          }
+        },
+        {
+          "id": "initials_a",
+          "type": "text",
+          "required": false,
+          "bind": "initials_a",
+          "x": 56,
+          "y": 168,
+          "w": 470,
+          "h": 392,
+          "font": "display",
+          "size": {
+            "max": 160,
+            "min": 60
+          },
+          "fill": "#c9a45c",
+          "align": "center",
+          "when": {
+            "photo": "photo_a",
+            "present": false
+          }
+        },
+        {
+          "id": "empty_b",
+          "type": "rect",
+          "x": 674,
+          "y": 168,
+          "w": 470,
+          "h": 392,
+          "fill": "#33363b",
+          "when": {
+            "photo": "photo_b",
+            "present": false
+          }
+        },
+        {
+          "id": "initials_b",
+          "type": "text",
+          "required": false,
+          "bind": "initials_b",
+          "x": 674,
+          "y": 168,
+          "w": 470,
+          "h": 392,
+          "font": "display",
+          "size": {
+            "max": 160,
+            "min": 60
+          },
+          "fill": "#c9a45c",
+          "align": "center",
+          "when": {
+            "photo": "photo_b",
+            "present": false
+          }
+        },
+        {
+          "id": "vs_slash",
+          "type": "path",
+          "fill": "#c9a45c",
+          "d": "M 622 228 L 586 322 L 606 322 L 574 420 L 640 304 L 618 304 Z"
+        },
+        {
+          "id": "vs_big",
+          "type": "text",
+          "literal": "VS",
+          "required": true,
+          "x": 526,
+          "y": 312,
+          "w": 148,
+          "h": 124,
+          "font": "display",
+          "size": {
+            "max": 104,
+            "min": 104
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "result",
+          "type": "text",
+          "required": false,
+          "bind": "result",
+          "x": 526,
+          "y": 440,
+          "w": 148,
+          "h": 70,
+          "font": "display",
+          "size": {
+            "max": 60,
+            "min": 26
+          },
+          "fill": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "a_flag",
+          "type": "flag",
+          "bind": "a_flag",
+          "required": false,
+          "x": 56,
+          "y": 582,
+          "w": 56,
+          "h": 42,
+          "radius": 3
+        },
+        {
+          "id": "a_rating",
+          "type": "text",
+          "required": false,
+          "bind": "a_rating",
+          "x": 126,
+          "y": 578,
+          "w": 400,
+          "h": 50,
+          "font": "body-semibold",
+          "size": {
+            "max": 28,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "maxLines": 1
+        },
+        {
+          "id": "b_flag",
+          "type": "flag",
+          "bind": "b_flag",
+          "required": false,
+          "x": 674,
+          "y": 582,
+          "w": 56,
+          "h": 42,
+          "radius": 3
+        },
+        {
+          "id": "b_rating",
+          "type": "text",
+          "required": false,
+          "bind": "b_rating",
+          "x": 744,
+          "y": 578,
+          "w": 400,
+          "h": 50,
+          "font": "body-semibold",
+          "size": {
+            "max": 28,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "maxLines": 1
+        },
+        {
+          "id": "credit",
+          "type": "credit",
+          "x": 150,
+          "y": 636,
+          "w": 900,
+          "h": 28,
+          "font": "body",
+          "size": {
+            "max": 13,
+            "min": 10
+          },
+          "maxLines": 2,
+          "align": "center",
+          "fill": "#9aa0aa"
+        },
+        {
+          "id": "brand",
+          "type": "text",
+          "literal": "XLCHESS",
+          "required": true,
+          "x": 1030,
+          "y": 640,
+          "w": 130,
+          "h": 24,
+          "font": "display-medium",
+          "size": {
+            "max": 18,
+            "min": 18
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.2,
+          "align": "right",
+          "textCase": "upper"
+        }
+      ]
+    },
+    "1:1": {
+      "width": 1080,
+      "height": 1080,
+      "background": "#26282b",
+      "elements": [
+        {
+          "id": "panel_right",
+          "type": "rect",
+          "x": 540,
+          "y": 0,
+          "w": 540,
+          "h": 1080,
+          "fill": "#0e1930"
+        },
+        {
+          "id": "player_a",
+          "type": "text",
+          "required": true,
+          "bind": "player_a",
+          "x": 30,
+          "y": 36,
+          "w": 440,
+          "h": 110,
+          "font": "display",
+          "size": {
+            "max": 84,
+            "min": 32
+          },
+          "fill": "#c9a45c",
+          "align": "right",
+          "textCase": "upper",
+          "tracking": 0.01
+        },
+        {
+          "id": "vs_small",
+          "type": "text",
+          "literal": "VS",
+          "required": true,
+          "x": 470,
+          "y": 60,
+          "w": 140,
+          "h": 60,
+          "font": "display",
+          "size": {
+            "max": 44,
+            "min": 44
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "player_b",
+          "type": "text",
+          "required": true,
+          "bind": "player_b",
+          "x": 610,
+          "y": 36,
+          "w": 440,
+          "h": 110,
+          "font": "display",
+          "size": {
+            "max": 84,
+            "min": 32
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "textCase": "upper",
+          "tracking": 0.01
+        },
+        {
+          "id": "subtitle",
+          "type": "text",
+          "required": false,
+          "bind": "subtitle",
+          "x": 90,
+          "y": 150,
+          "w": 900,
+          "h": 56,
+          "font": "body-extrabold",
+          "size": {
+            "max": 34,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "center",
+          "textCase": "upper",
+          "tracking": 0.08
+        },
+        {
+          "id": "photo_a",
+          "type": "photo",
+          "x": 50,
+          "y": 250,
+          "w": 440,
+          "h": 470,
+          "required": false,
+          "anchor": {
+            "x": 0.5,
+            "y": 0.35
+          },
+          "frame": {
+            "colour": "#c9a45c",
+            "width": 2,
+            "gap": 5
+          }
+        },
+        {
+          "id": "photo_b",
+          "type": "photo",
+          "x": 590,
+          "y": 250,
+          "w": 440,
+          "h": 470,
+          "required": false,
+          "anchor": {
+            "x": 0.5,
+            "y": 0.35
+          },
+          "frame": {
+            "colour": "#c9a45c",
+            "width": 2,
+            "gap": 5
+          }
+        },
+        {
+          "id": "empty_a",
+          "type": "rect",
+          "x": 50,
+          "y": 250,
+          "w": 440,
+          "h": 470,
+          "fill": "#33363b",
+          "when": {
+            "photo": "photo_a",
+            "present": false
+          }
+        },
+        {
+          "id": "initials_a",
+          "type": "text",
+          "required": false,
+          "bind": "initials_a",
+          "x": 50,
+          "y": 250,
+          "w": 440,
+          "h": 470,
+          "font": "display",
+          "size": {
+            "max": 170,
+            "min": 60
+          },
+          "fill": "#c9a45c",
+          "align": "center",
+          "when": {
+            "photo": "photo_a",
+            "present": false
+          }
+        },
+        {
+          "id": "empty_b",
+          "type": "rect",
+          "x": 590,
+          "y": 250,
+          "w": 440,
+          "h": 470,
+          "fill": "#33363b",
+          "when": {
+            "photo": "photo_b",
+            "present": false
+          }
+        },
+        {
+          "id": "initials_b",
+          "type": "text",
+          "required": false,
+          "bind": "initials_b",
+          "x": 590,
+          "y": 250,
+          "w": 440,
+          "h": 470,
+          "font": "display",
+          "size": {
+            "max": 170,
+            "min": 60
+          },
+          "fill": "#c9a45c",
+          "align": "center",
+          "when": {
+            "photo": "photo_b",
+            "present": false
+          }
+        },
+        {
+          "id": "vs_big",
+          "type": "text",
+          "literal": "VS",
+          "required": true,
+          "x": 490,
+          "y": 440,
+          "w": 100,
+          "h": 90,
+          "font": "display",
+          "size": {
+            "max": 80,
+            "min": 80
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "result",
+          "type": "text",
+          "required": false,
+          "bind": "result",
+          "x": 490,
+          "y": 540,
+          "w": 100,
+          "h": 60,
+          "font": "display",
+          "size": {
+            "max": 44,
+            "min": 22
+          },
+          "fill": "#ffffff",
+          "align": "center"
+        },
+        {
+          "id": "a_flag",
+          "type": "flag",
+          "bind": "a_flag",
+          "required": false,
+          "x": 50,
+          "y": 744,
+          "w": 56,
+          "h": 42,
+          "radius": 3
+        },
+        {
+          "id": "a_rating",
+          "type": "text",
+          "required": false,
+          "bind": "a_rating",
+          "x": 120,
+          "y": 740,
+          "w": 370,
+          "h": 50,
+          "font": "body-semibold",
+          "size": {
+            "max": 28,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "left"
+        },
+        {
+          "id": "b_flag",
+          "type": "flag",
+          "bind": "b_flag",
+          "required": false,
+          "x": 590,
+          "y": 744,
+          "w": 56,
+          "h": 42,
+          "radius": 3
+        },
+        {
+          "id": "b_rating",
+          "type": "text",
+          "required": false,
+          "bind": "b_rating",
+          "x": 660,
+          "y": 740,
+          "w": 370,
+          "h": 50,
+          "font": "body-semibold",
+          "size": {
+            "max": 28,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "left"
+        },
+        {
+          "id": "credit",
+          "type": "credit",
+          "x": 120,
+          "y": 1020,
+          "w": 840,
+          "h": 40,
+          "font": "body",
+          "size": {
+            "max": 13,
+            "min": 10
+          },
+          "maxLines": 2,
+          "align": "center",
+          "fill": "#9aa0aa"
+        },
+        {
+          "id": "brand",
+          "type": "text",
+          "literal": "XLCHESS",
+          "required": true,
+          "x": 900,
+          "y": 1000,
+          "w": 130,
+          "h": 24,
+          "font": "display-medium",
+          "size": {
+            "max": 18,
+            "min": 18
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.2,
+          "align": "right",
+          "textCase": "upper"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,447 @@
+{
+  "schemaVersion": 1,
+  "id": "tournament-result",
+  "aliases": [],
+  "name": "Tournament Result",
+  "version": "1.0.0",
+  "description": "The champion and the top finishers, with an optional photograph of the winner.",
+  "aspects": {
+    "16:9": {
+      "width": 1200,
+      "height": 675,
+      "background": "#26282b",
+      "elements": [
+        {
+          "id": "bar",
+          "type": "rect",
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 675,
+          "fill": "#c9a45c"
+        },
+        {
+          "id": "photo",
+          "type": "photo",
+          "x": 704,
+          "y": 60,
+          "w": 440,
+          "h": 540,
+          "required": false,
+          "anchor": {
+            "x": 0.5,
+            "y": 0.35
+          },
+          "frame": {
+            "colour": "#c9a45c",
+            "width": 2,
+            "gap": 5
+          }
+        },
+        {
+          "id": "kicker",
+          "type": "text",
+          "literal": "Final result",
+          "required": true,
+          "x": 56,
+          "y": 52,
+          "w": 590,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "kicker_wide",
+          "type": "text",
+          "literal": "Final result",
+          "required": true,
+          "x": 56,
+          "y": 52,
+          "w": 1088,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "event_name",
+          "type": "text",
+          "required": true,
+          "bind": "event_name",
+          "x": 56,
+          "y": 96,
+          "w": 590,
+          "h": 100,
+          "font": "display-medium",
+          "size": {
+            "max": 44,
+            "min": 22
+          },
+          "fill": "#9aa0aa",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "upper",
+          "tracking": 0.04,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "event_name_wide",
+          "type": "text",
+          "required": true,
+          "bind": "event_name",
+          "x": 56,
+          "y": 96,
+          "w": 1088,
+          "h": 100,
+          "font": "display-medium",
+          "size": {
+            "max": 44,
+            "min": 22
+          },
+          "fill": "#9aa0aa",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "upper",
+          "tracking": 0.04,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "winner",
+          "type": "text",
+          "required": true,
+          "bind": "winner",
+          "x": 56,
+          "y": 200,
+          "w": 590,
+          "h": 130,
+          "font": "display",
+          "size": {
+            "max": 108,
+            "min": 40
+          },
+          "fill": "#c9a45c",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "upper",
+          "tracking": 0,
+          "lineHeight": 1.05,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "winner_wide",
+          "type": "text",
+          "required": true,
+          "bind": "winner",
+          "x": 56,
+          "y": 200,
+          "w": 1088,
+          "h": 130,
+          "font": "display",
+          "size": {
+            "max": 108,
+            "min": 40
+          },
+          "fill": "#c9a45c",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "upper",
+          "tracking": 0,
+          "lineHeight": 1.05,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "winner_score",
+          "type": "text",
+          "required": false,
+          "bind": "winner_score",
+          "x": 56,
+          "y": 340,
+          "w": 590,
+          "h": 50,
+          "font": "body-extrabold",
+          "size": {
+            "max": 34,
+            "min": 18
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "winner_score_wide",
+          "type": "text",
+          "required": false,
+          "bind": "winner_score",
+          "x": 56,
+          "y": 340,
+          "w": 1088,
+          "h": 50,
+          "font": "body-extrabold",
+          "size": {
+            "max": 34,
+            "min": 18
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "second",
+          "type": "text",
+          "required": false,
+          "bind": "second",
+          "x": 56,
+          "y": 420,
+          "w": 590,
+          "h": 44,
+          "font": "body-semibold",
+          "size": {
+            "max": 30,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "second_wide",
+          "type": "text",
+          "required": false,
+          "bind": "second",
+          "x": 56,
+          "y": 420,
+          "w": 1088,
+          "h": 44,
+          "font": "body-semibold",
+          "size": {
+            "max": 30,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "third",
+          "type": "text",
+          "required": false,
+          "bind": "third",
+          "x": 56,
+          "y": 470,
+          "w": 590,
+          "h": 44,
+          "font": "body-semibold",
+          "size": {
+            "max": 30,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "third_wide",
+          "type": "text",
+          "required": false,
+          "bind": "third",
+          "x": 56,
+          "y": 470,
+          "w": 1088,
+          "h": 44,
+          "font": "body-semibold",
+          "size": {
+            "max": 30,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "headline",
+          "type": "text",
+          "required": false,
+          "bind": "headline",
+          "x": 56,
+          "y": 530,
+          "w": 590,
+          "h": 80,
+          "font": "body",
+          "size": {
+            "max": 26,
+            "min": 16
+          },
+          "fill": "#9aa0aa",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "headline_wide",
+          "type": "text",
+          "required": false,
+          "bind": "headline",
+          "x": 56,
+          "y": 530,
+          "w": 1088,
+          "h": 80,
+          "font": "body",
+          "size": {
+            "max": 26,
+            "min": 16
+          },
+          "fill": "#9aa0aa",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "credit",
+          "type": "credit",
+          "x": 56,
+          "y": 618,
+          "w": 590,
+          "h": 30,
+          "font": "body",
+          "size": {
+            "max": 13,
+            "min": 10
+          },
+          "maxLines": 2,
+          "align": "left",
+          "fill": "#9aa0aa"
+        },
+        {
+          "id": "brand",
+          "type": "text",
+          "literal": "XLCHESS",
+          "required": true,
+          "x": 1004,
+          "y": 636,
+          "w": 140,
+          "h": 24,
+          "font": "display-medium",
+          "size": {
+            "max": 18,
+            "min": 18
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.2,
+          "align": "right",
+          "textCase": "upper"
+        }
+      ]
+    }
+  }
+}

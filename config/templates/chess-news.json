@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "id": "chess-news",
+  "aliases": [],
+  "name": "Chess News",
+  "version": "1.0.0",
+  "description": "A headline with a short summary and source line, with an optional photograph.",
+  "aspects": {
+    "16:9": {
+      "width": 1200,
+      "height": 675,
+      "background": "#26282b",
+      "elements": [
+        {
+          "id": "bar",
+          "type": "rect",
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 675,
+          "fill": "#c9a45c"
+        },
+        {
+          "id": "photo",
+          "type": "photo",
+          "x": 704,
+          "y": 60,
+          "w": 440,
+          "h": 540,
+          "required": false,
+          "anchor": {
+            "x": 0.5,
+            "y": 0.35
+          },
+          "frame": {
+            "colour": "#c9a45c",
+            "width": 2,
+            "gap": 5
+          }
+        },
+        {
+          "id": "kicker",
+          "type": "text",
+          "literal": "Chess news",
+          "required": true,
+          "x": 56,
+          "y": 52,
+          "w": 590,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "kicker_wide",
+          "type": "text",
+          "literal": "Chess news",
+          "required": true,
+          "x": 56,
+          "y": 52,
+          "w": 1088,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "headline",
+          "type": "text",
+          "required": true,
+          "bind": "headline",
+          "x": 56,
+          "y": 100,
+          "w": 590,
+          "h": 280,
+          "font": "display",
+          "size": {
+            "max": 80,
+            "min": 32
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 4,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.08,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "headline_wide",
+          "type": "text",
+          "required": true,
+          "bind": "headline",
+          "x": 56,
+          "y": 100,
+          "w": 1088,
+          "h": 280,
+          "font": "display",
+          "size": {
+            "max": 80,
+            "min": 32
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 4,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.08,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "summary",
+          "type": "text",
+          "required": false,
+          "bind": "summary",
+          "x": 56,
+          "y": 395,
+          "w": 590,
+          "h": 150,
+          "font": "body",
+          "size": {
+            "max": 28,
+            "min": 16
+          },
+          "fill": "#d6d9df",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 4,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "summary_wide",
+          "type": "text",
+          "required": false,
+          "bind": "summary",
+          "x": 56,
+          "y": 395,
+          "w": 1088,
+          "h": 150,
+          "font": "body",
+          "size": {
+            "max": 28,
+            "min": 16
+          },
+          "fill": "#d6d9df",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 4,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "source_line",
+          "type": "text",
+          "required": false,
+          "bind": "source_line",
+          "x": 56,
+          "y": 560,
+          "w": 590,
+          "h": 40,
+          "font": "body-semibold",
+          "size": {
+            "max": 20,
+            "min": 14
+          },
+          "fill": "#c9a45c",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "source_line_wide",
+          "type": "text",
+          "required": false,
+          "bind": "source_line",
+          "x": 56,
+          "y": 560,
+          "w": 1088,
+          "h": 40,
+          "font": "body-semibold",
+          "size": {
+            "max": 20,
+            "min": 14
+          },
+          "fill": "#c9a45c",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "credit",
+          "type": "credit",
+          "x": 56,
+          "y": 618,
+          "w": 590,
+          "h": 30,
+          "font": "body",
+          "size": {
+            "max": 13,
+            "min": 10
+          },
+          "maxLines": 2,
+          "align": "left",
+          "fill": "#9aa0aa"
+        },
+        {
+          "id": "brand",
+          "type": "text",
+          "literal": "XLCHESS",
+          "required": true,
+          "x": 1004,
+          "y": 636,
+          "w": 140,
+          "h": 24,
+          "font": "display-medium",
+          "size": {
+            "max": 18,
+            "min": 18
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.2,
+          "align": "right",
+          "textCase": "upper"
+        }
+      ]
+    }
+  }
+}

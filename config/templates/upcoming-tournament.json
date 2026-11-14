@@ -1,0 +1,339 @@
+{
+  "schemaVersion": 1,
+  "id": "upcoming-tournament",
+  "aliases": [],
+  "name": "Upcoming Tournament",
+  "version": "1.0.0",
+  "description": "Event name, dates, venue and format, with an optional photograph of the venue or a player.",
+  "aspects": {
+    "16:9": {
+      "width": 1200,
+      "height": 675,
+      "background": "#0e1930",
+      "elements": [
+        {
+          "id": "bar",
+          "type": "rect",
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 675,
+          "fill": "#c9a45c"
+        },
+        {
+          "id": "photo",
+          "type": "photo",
+          "x": 704,
+          "y": 60,
+          "w": 440,
+          "h": 540,
+          "required": false,
+          "anchor": {
+            "x": 0.5,
+            "y": 0.35
+          },
+          "frame": {
+            "colour": "#c9a45c",
+            "width": 2,
+            "gap": 5
+          }
+        },
+        {
+          "id": "kicker",
+          "type": "text",
+          "literal": "Upcoming",
+          "required": true,
+          "x": 56,
+          "y": 52,
+          "w": 590,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "kicker_wide",
+          "type": "text",
+          "literal": "Upcoming",
+          "required": true,
+          "x": 56,
+          "y": 52,
+          "w": 1088,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "event_name",
+          "type": "text",
+          "required": true,
+          "bind": "event_name",
+          "x": 56,
+          "y": 100,
+          "w": 590,
+          "h": 230,
+          "font": "display",
+          "size": {
+            "max": 92,
+            "min": 38
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 3,
+          "textCase": "upper",
+          "tracking": 0,
+          "lineHeight": 1.05,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "event_name_wide",
+          "type": "text",
+          "required": true,
+          "bind": "event_name",
+          "x": 56,
+          "y": 100,
+          "w": 1088,
+          "h": 230,
+          "font": "display",
+          "size": {
+            "max": 92,
+            "min": 38
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 3,
+          "textCase": "upper",
+          "tracking": 0,
+          "lineHeight": 1.05,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "dates",
+          "type": "text",
+          "required": true,
+          "bind": "dates",
+          "x": 56,
+          "y": 350,
+          "w": 590,
+          "h": 50,
+          "font": "display-medium",
+          "size": {
+            "max": 40,
+            "min": 22
+          },
+          "fill": "#c9a45c",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "upper",
+          "tracking": 0.04,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "dates_wide",
+          "type": "text",
+          "required": true,
+          "bind": "dates",
+          "x": 56,
+          "y": 350,
+          "w": 1088,
+          "h": 50,
+          "font": "display-medium",
+          "size": {
+            "max": 40,
+            "min": 22
+          },
+          "fill": "#c9a45c",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 1,
+          "textCase": "upper",
+          "tracking": 0.04,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "venue",
+          "type": "text",
+          "required": false,
+          "bind": "venue",
+          "x": 56,
+          "y": 410,
+          "w": 590,
+          "h": 90,
+          "font": "body-semibold",
+          "size": {
+            "max": 32,
+            "min": 18
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "venue_wide",
+          "type": "text",
+          "required": false,
+          "bind": "venue",
+          "x": 56,
+          "y": 410,
+          "w": 1088,
+          "h": 90,
+          "font": "body-semibold",
+          "size": {
+            "max": 32,
+            "min": 18
+          },
+          "fill": "#ffffff",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "format",
+          "type": "text",
+          "required": false,
+          "bind": "format",
+          "x": 56,
+          "y": 510,
+          "w": 590,
+          "h": 90,
+          "font": "body",
+          "size": {
+            "max": 26,
+            "min": 16
+          },
+          "fill": "#9aa0aa",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": true
+          }
+        },
+        {
+          "id": "format_wide",
+          "type": "text",
+          "required": false,
+          "bind": "format",
+          "x": 56,
+          "y": 510,
+          "w": 1088,
+          "h": 90,
+          "font": "body",
+          "size": {
+            "max": 26,
+            "min": 16
+          },
+          "fill": "#9aa0aa",
+          "align": "left",
+          "valign": "top",
+          "maxLines": 2,
+          "textCase": "none",
+          "tracking": 0,
+          "lineHeight": 1.1,
+          "overflow": "error",
+          "when": {
+            "photo": "photo",
+            "present": false
+          }
+        },
+        {
+          "id": "credit",
+          "type": "credit",
+          "x": 56,
+          "y": 618,
+          "w": 590,
+          "h": 30,
+          "font": "body",
+          "size": {
+            "max": 13,
+            "min": 10
+          },
+          "maxLines": 2,
+          "align": "left",
+          "fill": "#9aa0aa"
+        },
+        {
+          "id": "brand",
+          "type": "text",
+          "literal": "XLCHESS",
+          "required": true,
+          "x": 1004,
+          "y": 636,
+          "w": 140,
+          "h": 24,
+          "font": "display-medium",
+          "size": {
+            "max": 18,
+            "min": 18
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.2,
+          "align": "right",
+          "textCase": "upper"
+        }
+      ]
+    }
+  }
+}
