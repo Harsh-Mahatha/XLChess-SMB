@@ -4,7 +4,12 @@ import { PrismaClient } from '@prisma/client';
 import sharp from 'sharp';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
-import { verifyOriginal, verifyRegion } from '../../../apps/api/src/assets/index.js';
+import {
+  AssetIntegrityError,
+  ensureAssetsIntact,
+  verifyOriginal,
+  verifyRegion,
+} from '../../../apps/api/src/assets/index.js';
 import {
   GraphicError,
   SAMPLE_DATA,
@@ -279,6 +284,21 @@ describe('player-vs-player with two real-shaped photographs', () => {
     expect(await problem('asset_integrity_problem', r.assetId)).toMatch(
       /render changed the photograph: local_edit/,
     );
+  });
+
+  it('re-checks every photograph of a render at publish time and notices a changed file', async () => {
+    const a = await photo(1600, 1000);
+    const b = await photo(1600, 1000);
+    const r = await renderGraphic(deps, pvpRequest(a, b));
+    await expect(ensureAssetsIntact(deps, [r.assetId])).resolves.toBeUndefined();
+    const key = `${BUCKETS.renders}/${r.path}`;
+    const stored = store.objects.get(key)!;
+    const forged = await sharp(Buffer.from(stored.bytes))
+      .modulate({ brightness: 1.3 })
+      .png()
+      .toBuffer();
+    store.objects.set(key, { ...stored, bytes: new Uint8Array(forged) });
+    await expect(ensureAssetsIntact(deps, [r.assetId])).rejects.toBeInstanceOf(AssetIntegrityError);
   });
 
   it('keeps every photograph of an approved render when retention runs', async () => {

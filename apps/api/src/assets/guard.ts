@@ -37,7 +37,7 @@ export async function assertAssetsIntact(db: PrismaClient, assetIds: string[]): 
  * Runs the checks again against the files in Storage right now, for the assets (and the photographs behind
  * them) that are about to be published, then asserts. A recorded check only says the files were fine when it
  * ran; publishing (1.13) calls this so a file changed since then still stops the post.
- * A render's photograph area is re-checked with the area recorded by its last `region_match` check.
+ * Every photograph area of a render is re-checked with the area recorded in `render_sources` (or, for a render made before 1.10, by its last `region_match` check).
  */
 export async function ensureAssetsIntact(deps: AssetDeps, assetIds: string[]): Promise<void> {
   for (const id of assetIds) {
@@ -62,7 +62,17 @@ export async function ensureAssetsIntact(deps: AssetDeps, assetIds: string[]): P
             fit?: 'inside' | 'cover';
           }
         | undefined;
-      if (d?.sourceId && d.rect && d.fit) {
+      // A render made by module 1.10 records every photograph it contains; re-check each one against its file now.
+      const sources = await deps.db.render_sources.findMany({ where: { render_id: id } });
+      for (const src of sources) {
+        await verifyRegion(deps, {
+          renderId: id,
+          sourceId: src.source_id,
+          rect: { left: src.left_px, top: src.top_px, width: src.width_px, height: src.height_px },
+          fit: src.fit as 'inside' | 'cover',
+        });
+      }
+      if (sources.length === 0 && d?.sourceId && d.rect && d.fit) {
         await verifyRegion(deps, { renderId: id, sourceId: d.sourceId, rect: d.rect, fit: d.fit });
       }
     }

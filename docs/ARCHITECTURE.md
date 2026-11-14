@@ -37,7 +37,7 @@ Fixed by these decisions:
 | Scheduler | `node-cron` in the API process, guarded by a Postgres advisory lock | The lock prevents double-firing if two instances run |
 | Object storage | Supabase Storage (S3-compatible) | Buckets `originals` (immutable), `renders`, `evidence` |
 | Image processing | Sharp | Only crop, resize, rotate and position on originals |
-| Graphic rendering | HTML/CSS templates → Playwright screenshot | Deterministic. Fonts are bundled. |
+| Graphic rendering | JSON template manifests → SVG (text as outlines from bundled fonts) → Sharp | Deterministic, pure Node, no Chromium (decision of 2026-11-14; see module 1.10) |
 | Local AI | Ollama + Qwen3 8B (quantised) as the first candidate | The model choice is configurable and benchmarked in Phase 3 |
 | Logging | pino (JSON) with secret redaction | |
 | Tests | Vitest + Supertest; Testcontainers Postgres for integration tests | |
@@ -131,9 +131,7 @@ interface ImageSource {
 }
 
 // Renderer (1.10): deterministic, with the same inputs giving the same output hash
-interface Renderer {
-  render(t: TemplateRef, data: RenderData, assets: AssetRef[]): Promise<RenderedAsset>;
-}
+// renderGraphic(deps, { template, aspect, data, candidateId? }) -> RenderResult   (apps/api/src/graphics/render.ts)
 
 // Publishing adapters (1.13, 1.23)
 interface PublishingAdapter {
@@ -287,7 +285,7 @@ Walkthrough (tournament phase):
 2. The research job pulls the result, PGN and standings from the approved sources. Code computes the score and standings, cross-checks the result across two sources, and produces a research package with `claimId`s.
 3. The story-selection GPU job picks the angle (1.6).
 4. The candidate GPU job writes 3 captions, each citing `claimId`s. The claim checker validates them (1.7).
-5. The image job finds photos in I1–I4 and records licence evidence. Sharp crops the originals, Playwright renders the game-result template, and hashes are stored (1.8–1.10).
+5. The image job finds photos in I1–I4 and records licence evidence. Sharp crops the originals, the game-result template is rendered with Sharp, and hashes are stored (1.8–1.10).
 6. The opportunity moves to `awaiting_review`. The XLChess UI shows 3 candidates with previews, sources and licences (1.11).
 7. The reviewer edits candidate B (creating revision 2) and approves revision 2 with its hash.
 8. The publishing step runs pre-flight checks, then posts to X in dry-run until live is enabled. It stores the tweet id and URL (1.13).
@@ -396,7 +394,7 @@ Add `config/post-types/<id>-<name>.json` and run `npm run config:validate`. No c
 ## 12. Open items (need answers, none block scaffolding)
 
 1. **XLChess JWT details**: signing algorithm and key/JWKS, issuer, audience, and the user-id claim. Do roles come from token claims or from SMB's own role table?
-2. **Host**: which host and OS run the XLChess backend? This matters because Playwright needs Chromium. Is there a public HTTPS URL the worker can reach?
+2. **Host**: which host and OS run the XLChess backend? (Playwright/Chromium is no longer needed since 1.10.) Is there a public HTTPS URL the worker can reach?
 3. **Who builds the worker and installer?** It isn't in any module's scope. This plan puts it in Phase 3.
 4. **X API tier**: posting with media needs a paid X API tier. Per the guide, paid services must be approved before implementation.
 5. **Data source access** (D1–D5, I1–I4): which ones need API keys or a paid plan, and what do their terms of use allow?
@@ -571,7 +569,7 @@ Code: contracts, licence rules and scoring in `packages/shared/src/images/`; sou
 
 All reasons that apply are stored, not just the first. The credit is `Photo: {author} / Wikimedia Commons, {licence}` (copyright holder if there is no author).
 
-**Ranking** (`scoreCandidate`, `SCORER_VERSION`): identity 0.5, resolution 0.25, shape 0.15, recency 0.1. A photo must be JPEG, PNG or WebP and at least 1200x675 until the templates (1.10) declare their slots.
+**Ranking** (`scoreCandidate`, `SCORER_VERSION`): identity 0.5, resolution 0.25, shape 0.15, recency 0.1. A photo must be JPEG, PNG or WebP and at least 1200x675 unless the caller passes `slotForTemplate` (1.10), in which case the minimum is the template's photo slot size.
 
 **Download checks.** HTTPS only, host must be in the adapter's `downloadHosts` (`upload.wikimedia.org`), no redirects, 50 MiB cap. The bytes must sniff as the type the provider declared and match the SHA-1 Wikimedia publishes. Any failure drops that photo and the next best is tried.
 
@@ -623,3 +621,29 @@ The tolerance exists because encoders differ across libvips versions and CPUs. I
 **Retention.** `purgeExpiredAssets` (`npm run assets:purge`) runs `smb.apply_retention` and then removes the files of every asset it marked deleted, stamping `purged_at`. Rows are never deleted. It skips anything protected (used by an approved or published revision, its ancestors, licence evidence), and a failed removal is retried on the next run. Unused generated images expire with the other unused images. Run it on a schedule in 1.17.
 
 **Not in 1.9.** Rendering and the photo rectangle itself (1.10), calling `ensureAssetsIntact` at publish time (1.13), the schedule (1.17), and a vision check that a photo really shows the named person.
+
+---
+
+## Graphics templates and rendering (module 1.10)
+
+Code: manifest schema in `packages/shared/src/graphics/`; renderer, registry and CLI in `apps/api/src/graphics/`; templates in `config/templates/*.json`; bundled fonts, flags and chess pieces in `apps/api/assets/graphics/` (licences in its `NOTICE.md`). Migration `20261103001600`. Reference artwork: `docs/design-refs/nakamura-vs-liang-reference.jpeg`.
+
+**Decisions (2026-11-14).** The renderer is SVG + opentype.js + Sharp, not Playwright (no Chromium on the host, and Sharp compositing is what the 1.9 integrity check assumes). A render can hold several photographs (`render_sources`). Binding a render into the approved revision hash is left to 1.11.
+
+**Templates** (`TemplateManifest`, validated on load; `npm run config:validate` also checks that post types name real templates). A manifest lists, per aspect (`16:9`, `1:1`, `4:5`; V1 posts to X use 16:9), the canvas size and an ordered list of elements in pixels: `rect`, `path`, `text`, `flag`, `board`, `photo` and `credit`. Eight templates ship: `player-vs-player` (alias `game-result`, also 1:1), `upcoming-tournament`, `tournament-result`, `player-ranking`, `rating-movement`, `chess-puzzle`, `chess-news`, `xlchess-update`. Bump a manifest's `version` whenever its layout changes: it is part of every render's key.
+
+**Adapting to content.** Text is wrapped inside its region and shrunk from `size.max` to `size.min`; text that still does not fit fails the render (`text_overflow`) unless that element allows an ellipsis (decorative text only). A bound text that is missing fails (`missing_data`) unless the element is optional, in which case it is left out. A photograph of any shape is cropped to its slot's shape, centred on the slot's `anchor` (faces sit in the upper part), and photographs smaller than the slot are refused rather than enlarged. A slot may be optional: elements with `when: { photo, present }` form the no-photo variant (a panel with initials, or a wider text column).
+
+**Rendering** (`renderGraphic`). (1) Each photograph is cut with `deriveAsset` (crop, resize with `cover`, lossless PNG: only the permitted operations) so the file in the graphic is traceable to the stored original; the photograph must be an original or derived image whose licence is accepted. (2) The layout is drawn as SVG (shapes, text as glyph outlines, the board from a FEN with the Cburnett pieces, frames *around* photographs), rasterised by Sharp, and flags and the cut photographs are composited at exact pixel positions. The manifest schema rejects text, flags, boards or credits placed over a photograph slot, and nothing is ever drawn over a photograph. (3) The PNG is stored content-addressed in `renders`, each photograph is recorded in `render_sources` (slot, rectangle, fit) and `verifyRegion` runs for every one. A render whose region check fails throws `verification_failed`.
+
+**Credits.** If the licence of any photograph requires attribution, the credit line from the licence record is drawn (whatever the caller passed) and a template with no credit region fails. The chess puzzle template credits the pieces (CC BY-SA 3.0).
+
+**Repeatable output.** `renderKey = sha256(template@version, aspect, texts, flags, boards, photograph hashes, credits, Sharp and libvips versions)`. The same inputs give the same key and the same file; asking again for a candidate returns the stored render (`candidate_renders` has one row per candidate, aspect and key).
+
+**Database.** `render_sources(render_id, slot, source_id, rect, fit)` and `candidate_renders` are append-only. `smb.asset_licence_problem` judges a render by *every* photograph it contains; `smb.asset_integrity_problem` needs, for each photograph, a passing hash check of its original, a passing derived check, and the newest `region_match` check recorded for that photograph (`detail.sourceId`). A render that only names a parent (made before 1.10) is judged as in 1.9. `smb.protected_asset_ids` keeps every photograph of an approved render. A render still names its first photograph as `parent_asset_id`.
+
+**Dev tool:** `npm run graphics:render -- list`; `npm run graphics:render -- render --template game-result --sample --photo photo_a=<assetId> --photo photo_b=<assetId> --out out.png`. Setting `SMB_RENDER_OUT=<folder>` when running the integration tests keeps every template's PNG for looking at.
+
+**World Championship trial.** `game-result` follows the Nakamura-Liang artwork (split charcoal and navy background, gold and white names, framed photographs, gold VS, flags and ratings, headline strip). The integration tests rebuild it with Gukesh and Sindarov sample data and two photographs of different shapes, and prove the photograph areas, the licence chain, retouch detection and retention. Placeholder ratings are for layout only: real ratings come from a verified research claim at generation time.
+
+**Not in 1.10.** Attaching a render to an approved revision and its hash (1.11), the publish-time checks (1.13), the render job and its retries (1.17), a federation claim in the research package (flags need an ISO code; the renderer takes `flags` from the caller), AI decorative backgrounds inside templates (assets exist via `registerGeneratedAsset`, no template slot uses them yet), and a vision check that a photograph shows the named person.
