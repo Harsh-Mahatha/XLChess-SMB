@@ -9,3 +9,4 @@ export * from './ai/index.js';
 export * from './generation/index.js';
 export * from './worker/index.js';
 export * from './images/index.js';
+export * from './graphics/index.js';

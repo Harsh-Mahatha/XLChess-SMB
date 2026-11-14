@@ -81,7 +81,7 @@ model jobs {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model media_assets {
-  id                                                            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                                                            String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   kind                                                          asset_kind
   bucket                                                        String
   path                                                          String
@@ -93,26 +93,29 @@ model media_assets {
   source_url                                                    String?
   source_page_url                                               String?
   image_source_id                                               String?
-  parent_asset_id                                               String?             @db.Uuid
+  parent_asset_id                                               String?                  @db.Uuid
   transform                                                     Json?
   template_version                                              String?
-  opportunity_id                                                String?             @db.Uuid
-  job_id                                                        String?             @db.Uuid
-  retention_until                                               DateTime?           @db.Timestamptz(6)
-  deleted_at                                                    DateTime?           @db.Timestamptz(6)
+  opportunity_id                                                String?                  @db.Uuid
+  job_id                                                        String?                  @db.Uuid
+  retention_until                                               DateTime?                @db.Timestamptz(6)
+  deleted_at                                                    DateTime?                @db.Timestamptz(6)
+  created_at                                                    DateTime                 @default(now()) @db.Timestamptz(6)
   generation                                                    Json?
-  purged_at                                                     DateTime?           @db.Timestamptz(6)
-  created_at                                                    DateTime            @default(now()) @db.Timestamptz(6)
-  image_candidates                                              image_candidates[]
-  data_sources                                                  data_sources?       @relation(fields: [image_source_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  jobs                                                          jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  post_opportunities                                            post_opportunities? @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  media_assets                                                  media_assets?       @relation("media_assetsTomedia_assets", fields: [parent_asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  other_media_assets                                            media_assets[]      @relation("media_assetsTomedia_assets")
-  media_licenses_media_licenses_asset_idTomedia_assets          media_licenses[]    @relation("media_licenses_asset_idTomedia_assets")
-  media_licenses_media_licenses_evidence_asset_idTomedia_assets media_licenses[]    @relation("media_licenses_evidence_asset_idTomedia_assets")
-  revision_assets                                               revision_assets[]
+  purged_at                                                     DateTime?                @db.Timestamptz(6)
   asset_integrity_checks                                        asset_integrity_checks[]
+  candidate_renders                                             candidate_renders[]
+  image_candidates                                              image_candidates[]
+  data_sources                                                  data_sources?            @relation(fields: [image_source_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  jobs                                                          jobs?                    @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities                                            post_opportunities?      @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  media_assets                                                  media_assets?            @relation("media_assetsTomedia_assets", fields: [parent_asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_media_assets                                            media_assets[]           @relation("media_assetsTomedia_assets")
+  media_licenses_media_licenses_asset_idTomedia_assets          media_licenses[]         @relation("media_licenses_asset_idTomedia_assets")
+  media_licenses_media_licenses_evidence_asset_idTomedia_assets media_licenses[]         @relation("media_licenses_evidence_asset_idTomedia_assets")
+  render_sources_render_sources_render_idTomedia_assets         render_sources[]         @relation("render_sources_render_idTomedia_assets")
+  render_sources_render_sources_source_idTomedia_assets         render_sources[]         @relation("render_sources_source_idTomedia_assets")
+  revision_assets                                               revision_assets[]
 
   @@unique([bucket, path])
   @@index([parent_asset_id], map: "media_assets_parent")
@@ -173,29 +176,30 @@ model opportunity_events {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model post_candidates {
-  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  opportunity_id      String             @db.Uuid
-  research_package_id String             @db.Uuid
-  generation_cycle    Int                @default(1)
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunity_id      String              @db.Uuid
+  research_package_id String              @db.Uuid
+  generation_cycle    Int                 @default(1)
   slot                String
   angle               String?
   provider            String
   model               String?
   prompt_version      String
-  job_id              String?            @db.Uuid
-  created_at          DateTime           @default(now()) @db.Timestamptz(6)
-  story_selection_id  String?            @db.Uuid
+  job_id              String?             @db.Uuid
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  story_selection_id  String?             @db.Uuid
   approach            String?
-  prompt_versions     Json               @default("{}")
-  generation_settings Json               @default("{}")
+  prompt_versions     Json                @default("{}")
+  generation_settings Json                @default("{}")
   output              Json?
   validation          Json?
   editorial           Json?
   visual_plan         Json?
-  jobs                jobs?              @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  post_opportunities  post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  research_packages   research_packages  @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  story_selections    story_selections?  @relation(fields: [story_selection_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  candidate_renders   candidate_renders[]
+  jobs                jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities  post_opportunities  @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  research_packages   research_packages   @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  story_selections    story_selections?   @relation(fields: [story_selection_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_revisions      post_revisions[]
   review_actions      review_actions[]
 
@@ -552,6 +556,60 @@ model image_candidates {
   @@schema("smb")
 }
 
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model asset_integrity_checks {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  asset_id       String       @db.Uuid
+  check_kind     String
+  passed         Boolean
+  failures       String[]     @default([])
+  detail         Json         @default("{}")
+  engine         Json         @default("{}")
+  policy_version String
+  checked_at     DateTime     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  media_assets   media_assets @relation(fields: [asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([asset_id, checked_at(sort: Desc)], map: "asset_integrity_checks_asset")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model candidate_renders {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  candidate_id     String          @db.Uuid
+  render_asset_id  String          @db.Uuid
+  template_id      String
+  template_version String
+  aspect           String
+  render_key       String
+  created_at       DateTime        @default(now()) @db.Timestamptz(6)
+  post_candidates  post_candidates @relation(fields: [candidate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  media_assets     media_assets    @relation(fields: [render_asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([candidate_id, aspect, render_key])
+  @@index([candidate_id, aspect], map: "candidate_renders_candidate")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model render_sources {
+  render_id                                           String       @db.Uuid
+  slot                                                String
+  source_id                                           String       @db.Uuid
+  left_px                                             Int
+  top_px                                              Int
+  width_px                                            Int
+  height_px                                           Int
+  fit                                                 String
+  created_at                                          DateTime     @default(now()) @db.Timestamptz(6)
+  media_assets_render_sources_render_idTomedia_assets media_assets @relation("render_sources_render_idTomedia_assets", fields: [render_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  media_assets_render_sources_source_idTomedia_assets media_assets @relation("render_sources_source_idTomedia_assets", fields: [source_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([render_id, slot])
+  @@index([source_id], map: "render_sources_source")
+  @@schema("smb")
+}
+
 enum asset_kind {
   original
   derived
@@ -651,22 +709,5 @@ enum review_action_type {
   request_research
   comment
 
-  @@schema("smb")
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model asset_integrity_checks {
-  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  asset_id       String       @db.Uuid
-  check_kind     String
-  passed         Boolean
-  failures       String[]     @default([])
-  detail         Json         @default("{}")
-  engine         Json         @default("{}")
-  policy_version String
-  checked_at     DateTime     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  media_assets   media_assets @relation(fields: [asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([asset_id, checked_at(sort: Desc)], map: "asset_integrity_checks_asset")
   @@schema("smb")
 }
