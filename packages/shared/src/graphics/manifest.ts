@@ -10,7 +10,13 @@ import { z } from 'zod';
 export const TEMPLATE_SCHEMA_VERSION = 1;
 
 /** Bundled fonts. Text is turned into outlines from these files, so output does not depend on the host. */
-export const FONT_IDS = ['display', 'display-medium', 'body', 'body-semibold', 'body-extrabold'] as const;
+export const FONT_IDS = [
+  'display',
+  'display-medium',
+  'body',
+  'body-semibold',
+  'body-extrabold',
+] as const;
 export const FontId = z.enum(FONT_IDS);
 export type FontId = z.infer<typeof FontId>;
 
@@ -50,7 +56,10 @@ export const PathElement = z
   .object({
     ...base,
     type: z.literal('path'),
-    d: z.string().regex(/^[MLHVCZ0-9.,\s-]+$/, 'only absolute M L H V C Z commands are allowed').max(2000),
+    d: z
+      .string()
+      .regex(/^[MLHVCZ0-9.,\s-]+$/, 'only absolute M L H V C Z commands are allowed')
+      .max(2000),
     fill: colour,
   })
   .strict();
@@ -84,7 +93,10 @@ export const TextElement = z
     overflow: z.enum(['error', 'ellipsis']).default('error'),
   })
   .strict()
-  .refine((e) => (e.bind === undefined) !== (e.literal === undefined), 'give exactly one of bind and literal')
+  .refine(
+    (e) => (e.bind === undefined) !== (e.literal === undefined),
+    'give exactly one of bind and literal',
+  )
   .refine((e) => e.size.min <= e.size.max, 'size.min must not exceed size.max');
 export type TextElement = z.infer<typeof TextElement>;
 
@@ -135,10 +147,16 @@ export const PhotoElement = z
     /** A required slot that is empty fails the render; an optional one switches `when` regions to no-photo. */
     required: z.boolean().default(false),
     /** Where the crop is centred when the photo is a different shape: 0 is left/top, 1 is right/bottom. */
-    anchor: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).strict().default({ x: 0.5, y: 0.4 }),
+    anchor: z
+      .object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })
+      .strict()
+      .default({ x: 0.5, y: 0.4 }),
     /** Photographs smaller than this are refused rather than blown up. */
     min: z.object({ width: size, height: size }).strict().optional(),
-    frame: z.object({ colour, width: size, gap: z.number().min(0).max(64) }).strict().optional(),
+    frame: z
+      .object({ colour, width: size, gap: z.number().min(0).max(64) })
+      .strict()
+      .optional(),
   })
   .strict();
 export type PhotoElement = z.infer<typeof PhotoElement>;
@@ -193,7 +211,9 @@ export const TemplateManifest = z
     /** Bump whenever the layout changes: it is part of every render's key and hash. */
     version: z.string().regex(/^\d+\.\d+\.\d+$/),
     description: z.string().min(1),
-    aspects: z.record(Aspect, AspectLayout).refine((o) => Object.keys(o).length >= 1, 'declare at least one aspect'),
+    aspects: z
+      .record(Aspect, AspectLayout)
+      .refine((o) => Object.keys(o).length >= 1, 'declare at least one aspect'),
   })
   .strict()
   .superRefine((m, ctx) => {
@@ -204,7 +224,11 @@ export const TemplateManifest = z
           layout.elements.filter((x): x is PhotoElement => x.type === 'photo').map((x) => x.id),
         );
         if (ids.has(e.id)) {
-          ctx.addIssue({ code: 'custom', path: ['aspects', aspect, 'elements', i, 'id'], message: `duplicate id ${e.id}` });
+          ctx.addIssue({
+            code: 'custom',
+            path: ['aspects', aspect, 'elements', i, 'id'],
+            message: `duplicate id ${e.id}`,
+          });
         }
         ids.add(e.id);
         if (e.when && !slotIds.has(e.when.photo)) {
@@ -231,7 +255,8 @@ export const TemplateManifest = z
       const photos = layout.elements.filter((x): x is PhotoElement => x.type === 'photo');
       for (const p of photos) {
         for (const e of layout.elements) {
-          if (e.type !== 'text' && e.type !== 'flag' && e.type !== 'board' && e.type !== 'credit') continue;
+          if (e.type !== 'text' && e.type !== 'flag' && e.type !== 'board' && e.type !== 'credit')
+            continue;
           if (e.when?.photo === p.id && !e.when.present) continue; // the no-photo variant fills the slot
           const w = 'w' in e ? e.w : e.size;
           const h = 'h' in e ? e.h : w;
@@ -275,7 +300,10 @@ export function photoSlots(manifest: TemplateManifest, aspect: Aspect): PhotoSlo
 }
 
 /** The smallest photograph that can fill every slot of an aspect without being enlarged. */
-export function minimumPhotoSize(manifest: TemplateManifest, aspect: Aspect): { minWidth: number; minHeight: number } {
+export function minimumPhotoSize(
+  manifest: TemplateManifest,
+  aspect: Aspect,
+): { minWidth: number; minHeight: number } {
   const slots = photoSlots(manifest, aspect);
   return {
     minWidth: Math.max(0, ...slots.map((s) => s.minWidth)),

@@ -38,7 +38,7 @@ function pieces(): Map<string, string> {
   const out = new Map<string, string>();
   for (const m of svg.matchAll(/<g id="([wb][kqrbnp])"/g)) {
     let depth = 0;
-    let i = m.index!;
+    const i = m.index!;
     const tag = /<g\b|<\/g>/g;
     tag.lastIndex = i;
     let t: RegExpExecArray | null;
@@ -78,7 +78,8 @@ export function boardSvg(e: BoardElement, fen: string, blackToBottom: boolean): 
       const piece = board[row]![col];
       if (piece) {
         const art = pieces().get(`${piece.color}${piece.type}`);
-        if (art) parts.push(`<g transform="translate(${x} ${y}) scale(${round(sq / 40)})">${art}</g>`);
+        if (art)
+          parts.push(`<g transform="translate(${x} ${y}) scale(${round(sq / 40)})">${art}</g>`);
       }
     }
   }
@@ -106,7 +107,9 @@ export async function flagPng(e: FlagElement, iso: string): Promise<Buffer> {
     const mask = Buffer.from(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" rx="${e.radius}" fill="#fff"/></svg>`,
     );
-    img = sharp(await img.toBuffer()).composite([{ input: mask, blend: 'dest-in' }]).png();
+    img = sharp(await img.toBuffer())
+      .composite([{ input: mask, blend: 'dest-in' }])
+      .png();
   }
   return img.toBuffer();
 }
@@ -127,7 +130,11 @@ function textFor(e: TextElement, data: RenderData): string | undefined {
   return undefined;
 }
 
-const styleOf = (e: { font: TextElement['font']; tracking?: number; textCase?: 'none' | 'upper' }): TextStyle => ({
+const styleOf = (e: {
+  font: TextElement['font'];
+  tracking?: number;
+  textCase?: 'none' | 'upper';
+}): TextStyle => ({
   font: loadFont(e.font),
   tracking: e.tracking ?? 0,
   textCase: e.textCase ?? 'none',
@@ -143,7 +150,11 @@ export interface BaseLayer {
 }
 
 /** Draws everything except photographs and flags. Throws when required data is missing or text cannot fit. */
-export function buildBaseLayer(layout: AspectLayout, data: RenderData, filled: Set<string>): BaseLayer {
+export function buildBaseLayer(
+  layout: AspectLayout,
+  data: RenderData,
+  filled: Set<string>,
+): BaseLayer {
   const out: string[] = [];
   const flags: BaseLayer['flags'] = [];
   const slots: PhotoElement[] = [];
@@ -183,7 +194,8 @@ export function buildBaseLayer(layout: AspectLayout, data: RenderData, filled: S
       case 'board': {
         const fen = data.boards[e.bind];
         if (!fen) {
-          if (e.required) throw new GraphicError('missing_data', `the template needs the board "${e.bind}"`);
+          if (e.required)
+            throw new GraphicError('missing_data', `the template needs the board "${e.bind}"`);
           break;
         }
         out.push(boardSvg(e, fen, data.blackToBottom));
@@ -192,7 +204,8 @@ export function buildBaseLayer(layout: AspectLayout, data: RenderData, filled: S
       case 'flag': {
         const iso = data.flags[e.bind];
         if (!iso) {
-          if (e.required) throw new GraphicError('missing_data', `the template needs the flag "${e.bind}"`);
+          if (e.required)
+            throw new GraphicError('missing_data', `the template needs the flag "${e.bind}"`);
           break;
         }
         flagSvg(iso); // fail early on an unknown code
@@ -229,7 +242,9 @@ function creditPath(e: CreditElement, credits: string[], notes: string[]): strin
     e.id,
   );
   if (fitted.truncated) notes.push(`${e.id}: shortened`);
-  return [`<path d="${textPath(fitted, { ...e, lineHeight: 1.25, overflow: 'error' }, style, e.align, 'middle')}" fill="${e.fill}"/>`];
+  return [
+    `<path d="${textPath(fitted, { ...e, lineHeight: 1.25, overflow: 'error' }, style, e.align, 'middle')}" fill="${e.fill}"/>`,
+  ];
 }
 
 export { esc };

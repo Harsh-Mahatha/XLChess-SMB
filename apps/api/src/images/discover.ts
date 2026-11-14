@@ -8,6 +8,7 @@ import {
   canonicalJson,
   scoreCandidate,
   type ImageCandidate,
+  type PhotoSlot,
   type ImageSubject,
   type LicenceAssessment,
 } from '@smb/shared';
@@ -50,6 +51,11 @@ export interface DiscoverDeps {
   inspector?: PhotoInspector;
   /** CC BY-SA is accepted (decision of 2026-11-13). */
   allowShareAlike?: boolean;
+  /**
+   * The photo size a post type's template needs (module 1.10, `slotForTemplate`). Without it every photo must
+   * cover a 16:9 card, as before the templates declared their slots.
+   */
+  slotForTemplate?: (template: string | undefined) => PhotoSlot | undefined;
   /** Photos kept per opportunity, and per subject. */
   maxPhotos?: number;
   maxPerSubject?: number;
@@ -187,6 +193,7 @@ export async function discoverImages(
   const row = await db.post_configs.findUniqueOrThrow({ where: { id: opp.post_config_id } });
   const config = PostTypeConfig.parse(row.config_json);
   const need = config.imageRules.need;
+  const photoSlot = deps.slotForTemplate?.(config.imageRules.template) ?? DEFAULT_PHOTO_SLOT;
   if (need === 'none') {
     return {
       status: 'not_needed',
@@ -243,7 +250,7 @@ export async function discoverImages(
   // --- Decide -------------------------------------------------------------------------------------
   const assessed: Assessed[] = [...found.values()].map((candidate) => {
     const assessment = assessLicence(candidate.evidence, { allowShareAlike: deps.allowShareAlike });
-    const score = scoreCandidate(candidate, DEFAULT_PHOTO_SLOT, now());
+    const score = scoreCandidate(candidate, photoSlot, now());
     return {
       candidate,
       assessment,
@@ -300,12 +307,12 @@ export async function discoverImages(
         throw new ImageDownloadError('http_error', `the file is ${facts.mime}, not ${mime}`);
       }
       if (
-        facts.width < DEFAULT_PHOTO_SLOT.minWidth ||
-        facts.height < DEFAULT_PHOTO_SLOT.minHeight
+        facts.width < photoSlot.minWidth ||
+        facts.height < photoSlot.minHeight
       ) {
         throw new ImageDownloadError(
           'http_error',
-          `the file is ${facts.width}x${facts.height}, below the ${DEFAULT_PHOTO_SLOT.minWidth}x${DEFAULT_PHOTO_SLOT.minHeight} minimum (the provider said ${a.candidate.width}x${a.candidate.height})`,
+          `the file is ${facts.width}x${facts.height}, below the ${photoSlot.minWidth}x${photoSlot.minHeight} minimum (the provider said ${a.candidate.width}x${a.candidate.height})`,
         );
       }
       fetched.set(candidateKey(a.candidate), {

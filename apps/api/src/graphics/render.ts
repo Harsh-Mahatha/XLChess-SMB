@@ -7,7 +7,13 @@ import {
   type PhotoElement,
   type RenderDataInput,
 } from '@smb/shared';
-import { deriveAsset, engineInfo, readVerified, verifyRegion, type AssetDeps } from '../assets/index.js';
+import {
+  deriveAsset,
+  engineInfo,
+  readVerified,
+  verifyRegion,
+  type AssetDeps,
+} from '../assets/index.js';
 import { assetLicenceProblem } from '../images/guard.js';
 import { BUCKETS, IMAGE_EXTENSIONS, contentPath, sha256Hex } from '../storage/index.js';
 import { buildBaseLayer, flagPng, isShown } from './compose.js';
@@ -86,7 +92,9 @@ export function cropFor(
 }
 
 async function rootLicenceCredit(deps: AssetDeps, assetId: string): Promise<string | undefined> {
-  const rows = await deps.db.$queryRaw<{ id: string }[]>`select smb.asset_root(${assetId}::uuid) as id`;
+  const rows = await deps.db.$queryRaw<
+    { id: string }[]
+  >`select smb.asset_root(${assetId}::uuid) as id`;
   const rootId = rows[0]?.id;
   if (!rootId) return undefined;
   const lic = await deps.db.media_licenses.findFirst({
@@ -112,7 +120,10 @@ async function preparePhoto(
   const problem = await assetLicenceProblem(deps.db, asset.id);
   if (problem) throw new GraphicError('photo_not_usable', `slot "${element.id}": ${problem}`);
   if (!asset.width || !asset.height) {
-    throw new GraphicError('photo_not_usable', `slot "${element.id}": the photograph has no recorded size`);
+    throw new GraphicError(
+      'photo_not_usable',
+      `slot "${element.id}": the photograph has no recorded size`,
+    );
   }
   const min = element.min ?? { width: element.w, height: element.h };
   if (asset.width < min.width || asset.height < min.height) {
@@ -172,12 +183,18 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
   const slotElements = layout.elements.filter((e): e is PhotoElement => e.type === 'photo');
   for (const slot of Object.keys(data.photos)) {
     if (!slotElements.some((s) => s.id === slot)) {
-      throw new GraphicError('missing_data', `template ${manifest.id} has no photograph slot "${slot}"`);
+      throw new GraphicError(
+        'missing_data',
+        `template ${manifest.id} has no photograph slot "${slot}"`,
+      );
     }
   }
   for (const s of slotElements) {
     if (s.required && !data.photos[s.id]) {
-      throw new GraphicError('photo_missing', `template ${manifest.id} needs a photograph for "${s.id}"`);
+      throw new GraphicError(
+        'photo_missing',
+        `template ${manifest.id} needs a photograph for "${s.id}"`,
+      );
     }
   }
 
@@ -198,7 +215,11 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
         flags: data.flags,
         boards: data.boards,
         blackToBottom: data.blackToBottom,
-        photos: photos.map((p) => ({ slot: p.element.id, sha256: p.derivedSha256, credit: p.credit ?? null })),
+        photos: photos.map((p) => ({
+          slot: p.element.id,
+          sha256: p.derivedSha256,
+          credit: p.credit ?? null,
+        })),
         engine: engineInfo(),
       }),
     )
@@ -207,10 +228,22 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
   if (req.candidateId) {
     const prior = await deps.db.candidate_renders.findUnique({
       where: {
-        candidate_id_aspect_render_key: { candidate_id: req.candidateId, aspect: req.aspect, render_key: key },
+        candidate_id_aspect_render_key: {
+          candidate_id: req.candidateId,
+          aspect: req.aspect,
+          render_key: key,
+        },
       },
     });
-    if (prior) return storedResult(deps, prior.render_asset_id, manifest.id, templateVersion, req.aspect, key);
+    if (prior)
+      return storedResult(
+        deps,
+        prior.render_asset_id,
+        manifest.id,
+        templateVersion,
+        req.aspect,
+        key,
+      );
   }
 
   // Compose.
@@ -218,11 +251,17 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
   const dataForLayout = {
     ...data,
     photos: Object.fromEntries(
-      [...withCredits].map(([slot, credit]) => [slot, { assetId: data.photos[slot]!.assetId, credit }]),
+      [...withCredits].map(([slot, credit]) => [
+        slot,
+        { assetId: data.photos[slot]!.assetId, credit },
+      ]),
     ),
   };
   const base = buildBaseLayer(layout, dataForLayout, filled);
-  if (photos.some((p) => p.credit) && !layout.elements.some((e) => e.type === 'credit' && isShown(e, filled))) {
+  if (
+    photos.some((p) => p.credit) &&
+    !layout.elements.some((e) => e.type === 'credit' && isShown(e, filled))
+  ) {
     throw new GraphicError(
       'missing_data',
       `template ${manifest.id} has no credit region but a photograph's licence requires attribution`,
@@ -230,10 +269,18 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
   }
   const overlays: sharp.OverlayOptions[] = [];
   for (const f of base.flags) {
-    overlays.push({ input: await flagPng(f.element, f.iso), left: Math.round(f.element.x), top: Math.round(f.element.y) });
+    overlays.push({
+      input: await flagPng(f.element, f.iso),
+      left: Math.round(f.element.x),
+      top: Math.round(f.element.y),
+    });
   }
   for (const p of photos) {
-    overlays.push({ input: Buffer.from(p.png), left: Math.round(p.element.x), top: Math.round(p.element.y) });
+    overlays.push({
+      input: Buffer.from(p.png),
+      left: Math.round(p.element.x),
+      top: Math.round(p.element.y),
+    });
   }
   const bytes = new Uint8Array(
     await sharp(Buffer.from(base.svg), { density: 72 })
@@ -246,7 +293,9 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
   const sha256 = sha256Hex(bytes);
   const path = contentPath(sha256, IMAGE_EXTENSIONS['image/png']);
   await deps.store.put(BUCKETS.renders, path, bytes, 'image/png');
-  let row = await deps.db.media_assets.findUnique({ where: { bucket_path: { bucket: BUCKETS.renders, path } } });
+  let row = await deps.db.media_assets.findUnique({
+    where: { bucket_path: { bucket: BUCKETS.renders, path } },
+  });
   const created = !row;
   row ??= await deps.db.media_assets.create({
     data: {
@@ -288,8 +337,19 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
       width: Math.round(p.element.w),
       height: Math.round(p.element.h),
     };
-    const report = await verifyRegion(deps, { renderId: row.id, sourceId: p.derivedId, rect, fit: 'cover' });
-    checked.push({ slot: p.element.id, assetId: p.assetId, derivedId: p.derivedId, rect, verified: report.passed });
+    const report = await verifyRegion(deps, {
+      renderId: row.id,
+      sourceId: p.derivedId,
+      rect,
+      fit: 'cover',
+    });
+    checked.push({
+      slot: p.element.id,
+      assetId: p.assetId,
+      derivedId: p.derivedId,
+      rect,
+      verified: report.passed,
+    });
     if (!report.passed) {
       throw new GraphicError(
         'verification_failed',
@@ -301,7 +361,11 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
   if (req.candidateId) {
     await deps.db.candidate_renders.upsert({
       where: {
-        candidate_id_aspect_render_key: { candidate_id: req.candidateId, aspect: req.aspect, render_key: key },
+        candidate_id_aspect_render_key: {
+          candidate_id: req.candidateId,
+          aspect: req.aspect,
+          render_key: key,
+        },
       },
       create: {
         candidate_id: req.candidateId,
@@ -340,7 +404,10 @@ async function storedResult(
   renderKey: string,
 ): Promise<RenderResult> {
   const row = await deps.db.media_assets.findUniqueOrThrow({ where: { id: assetId } });
-  const sources = await deps.db.render_sources.findMany({ where: { render_id: assetId }, orderBy: { slot: 'asc' } });
+  const sources = await deps.db.render_sources.findMany({
+    where: { render_id: assetId },
+    orderBy: { slot: 'asc' },
+  });
   return {
     assetId,
     sha256: row.sha256,

@@ -56,7 +56,10 @@ async function photo(
       opportunity_id: ID.opportunity,
     },
   });
-  const credit = opts.credit === undefined ? 'Photo: A. Photographer / Wikimedia Commons, CC BY-SA 4.0' : opts.credit;
+  const credit =
+    opts.credit === undefined
+      ? 'Photo: A. Photographer / Wikimedia Commons, CC BY-SA 4.0'
+      : opts.credit;
   await prisma.media_licenses.create({
     data: {
       asset_id: row.id,
@@ -85,7 +88,10 @@ const problem = async (fn: 'asset_integrity_problem' | 'asset_licence_problem', 
 const pvpRequest = (a: string, b: string) => ({
   template: 'game-result',
   aspect: '16:9' as const,
-  data: { ...SAMPLE_DATA['player-vs-player']!, photos: { photo_a: { assetId: a }, photo_b: { assetId: b } } },
+  data: {
+    ...SAMPLE_DATA['player-vs-player']!,
+    photos: { photo_a: { assetId: a }, photo_b: { assetId: b } },
+  },
 });
 
 beforeAll(async () => {
@@ -105,12 +111,21 @@ describe('player-vs-player with two real-shaped photographs', () => {
     const portrait = await photo(900, 1200);
     const r = await renderGraphic(deps, pvpRequest(landscape, portrait));
 
-    expect(r).toMatchObject({ width: 1200, height: 675, templateId: 'player-vs-player', created: true });
+    expect(r).toMatchObject({
+      width: 1200,
+      height: 675,
+      templateId: 'player-vs-player',
+      created: true,
+    });
     expect(r.photos.map((p) => [p.slot, p.verified])).toEqual([
       ['photo_a', true],
       ['photo_b', true],
     ]);
-    const sources = await rows(pgc, 'select slot, left_px, top_px, width_px, height_px from smb.render_sources where render_id = $1 order by slot', [r.assetId]);
+    const sources = await rows(
+      pgc,
+      'select slot, left_px, top_px, width_px, height_px from smb.render_sources where render_id = $1 order by slot',
+      [r.assetId],
+    );
     expect(sources).toHaveLength(2);
     expect(await problem('asset_integrity_problem', r.assetId)).toBeNull();
     expect(await problem('asset_licence_problem', r.assetId)).toBeNull();
@@ -121,7 +136,10 @@ describe('player-vs-player with two real-shaped photographs', () => {
 
     // The credit is drawn, below the photographs.
     const png = (await store.get(BUCKETS.renders, r.path))!;
-    const strip = await sharp(png).extract({ left: 200, top: 636, width: 800, height: 28 }).raw().toBuffer();
+    const strip = await sharp(png)
+      .extract({ left: 200, top: 636, width: 800, height: 28 })
+      .raw()
+      .toBuffer();
     const bg = strip.subarray(0, 3);
     expect([...strip].some((v, i) => Math.abs(v - bg[i % 3]!) > 40)).toBe(true);
   });
@@ -132,16 +150,25 @@ describe('player-vs-player with two real-shaped photographs', () => {
     const first = await renderGraphic(deps, { ...pvpRequest(a, b), candidateId: ID.candidateA });
     const second = await renderGraphic(deps, { ...pvpRequest(a, b), candidateId: ID.candidateA });
     const third = await renderGraphic(deps, pvpRequest(a, b));
-    expect(second).toMatchObject({ assetId: first.assetId, sha256: first.sha256, renderKey: first.renderKey, created: false });
+    expect(second).toMatchObject({
+      assetId: first.assetId,
+      sha256: first.sha256,
+      renderKey: first.renderKey,
+      created: false,
+    });
     expect(third.sha256).toBe(first.sha256);
-    const links = await rows(pgc, 'select 1 from smb.candidate_renders where candidate_id = $1', [ID.candidateA]);
+    const links = await rows(pgc, 'select 1 from smb.candidate_renders where candidate_id = $1', [
+      ID.candidateA,
+    ]);
     expect(links).toHaveLength(1);
   });
 
   it('refuses to be used until the licence of every photograph is accepted', async () => {
     const good = await photo(1600, 1000);
     const bad = await photo(1600, 1000, { licence: 'rejected' });
-    await expect(renderGraphic(deps, pvpRequest(good, bad))).rejects.toMatchObject({ code: 'photo_not_usable' });
+    await expect(renderGraphic(deps, pvpRequest(good, bad))).rejects.toMatchObject({
+      code: 'photo_not_usable',
+    });
 
     // A licence withdrawn later blocks a render that contains the photograph.
     const other = await photo(1600, 1000);
@@ -175,28 +202,59 @@ describe('player-vs-player with two real-shaped photographs', () => {
       .modulate({ brightness: 1.5 })
       .blur(6)
       .toBuffer();
-    const forged = new Uint8Array(await sharp(png).composite([{ input: patch, left: 200, top: 260 }]).png().toBuffer());
+    const forged = new Uint8Array(
+      await sharp(png)
+        .composite([{ input: patch, left: 200, top: 260 }])
+        .png()
+        .toBuffer(),
+    );
     const sha256 = sha256Hex(forged);
     const path = contentPath(sha256, 'png');
     await store.put(BUCKETS.renders, path, forged, 'image/png');
     const [first] = r.photos;
     const row = await prisma.media_assets.create({
       data: {
-        kind: 'render', bucket: BUCKETS.renders, path, sha256, mime: 'image/png', size_bytes: forged.byteLength,
-        width: 1200, height: 675, template_version: 'player-vs-player@1.0.0', parent_asset_id: first!.derivedId,
+        kind: 'render',
+        bucket: BUCKETS.renders,
+        path,
+        sha256,
+        mime: 'image/png',
+        size_bytes: forged.byteLength,
+        width: 1200,
+        height: 675,
+        template_version: 'player-vs-player@1.0.0',
+        parent_asset_id: first!.derivedId,
       },
     });
     for (const p of r.photos) {
       await prisma.render_sources.create({
-        data: { render_id: row.id, slot: p.slot, source_id: p.derivedId, left_px: p.rect.left, top_px: p.rect.top, width_px: p.rect.width, height_px: p.rect.height, fit: 'cover' },
+        data: {
+          render_id: row.id,
+          slot: p.slot,
+          source_id: p.derivedId,
+          left_px: p.rect.left,
+          top_px: p.rect.top,
+          width_px: p.rect.width,
+          height_px: p.rect.height,
+          fit: 'cover',
+        },
       });
     }
     const reports = [];
     for (const p of r.photos) {
-      reports.push(await verifyRegion(deps, { renderId: row.id, sourceId: p.derivedId, rect: p.rect, fit: 'cover' }));
+      reports.push(
+        await verifyRegion(deps, {
+          renderId: row.id,
+          sourceId: p.derivedId,
+          rect: p.rect,
+          fit: 'cover',
+        }),
+      );
     }
     expect(reports.map((x) => x.passed)).toEqual([false, true]);
-    expect(await problem('asset_integrity_problem', row.id)).toMatch(/render changed the photograph/);
+    expect(await problem('asset_integrity_problem', row.id)).toMatch(
+      /render changed the photograph/,
+    );
   });
 
   it('is judged on every photograph: the second one unchecked is still a problem', async () => {
@@ -208,19 +266,31 @@ describe('player-vs-player with two real-shaped photographs', () => {
     const second = r.photos[1]!;
     await prisma.asset_integrity_checks.create({
       data: {
-        asset_id: r.assetId, check_kind: 'region_match', passed: false, failures: ['local_edit'],
-        detail: { sourceId: second.derivedId }, engine: {}, policy_version: 'test', checked_at: new Date(Date.now() + 1000),
+        asset_id: r.assetId,
+        check_kind: 'region_match',
+        passed: false,
+        failures: ['local_edit'],
+        detail: { sourceId: second.derivedId },
+        engine: {},
+        policy_version: 'test',
+        checked_at: new Date(Date.now() + 1000),
       },
     });
-    expect(await problem('asset_integrity_problem', r.assetId)).toMatch(/render changed the photograph: local_edit/);
+    expect(await problem('asset_integrity_problem', r.assetId)).toMatch(
+      /render changed the photograph: local_edit/,
+    );
   });
 
   it('keeps every photograph of an approved render when retention runs', async () => {
     const a = await photo(1600, 1000);
     const b = await photo(1600, 1000);
     const r = await renderGraphic(deps, pvpRequest(a, b));
-    await prisma.revision_assets.create({ data: { revision_id: ID.revision2, asset_id: r.assetId, role: 'graphic' } });
-    const kept = (await rows<{ id: string }>(pgc, 'select smb.protected_asset_ids() as id')).map((x) => x.id);
+    await prisma.revision_assets.create({
+      data: { revision_id: ID.revision2, asset_id: r.assetId, role: 'graphic' },
+    });
+    const kept = (await rows<{ id: string }>(pgc, 'select smb.protected_asset_ids() as id')).map(
+      (x) => x.id,
+    );
     for (const p of r.photos) {
       expect(kept).toContain(p.derivedId);
       expect(kept).toContain(p.assetId);
@@ -236,9 +306,12 @@ describe('templates', () => {
       const sample = SAMPLE_DATA[manifest.id];
       expect(sample, `sample data for ${manifest.id}`).toBeDefined();
       for (const [aspect, layout] of Object.entries(manifest.aspects)) {
-        const slotIds = layout.elements.filter((e) => e.type === 'photo').map((e) => (e as { id: string }).id);
+        const slotIds = layout.elements
+          .filter((e) => e.type === 'photo')
+          .map((e) => (e as { id: string }).id);
         const variants: Record<string, Record<string, { assetId: string }>> = { 'no-photo': {} };
-        if (slotIds.length > 0) variants.photo = Object.fromEntries(slotIds.map((s) => [s, { assetId: subject }]));
+        if (slotIds.length > 0)
+          variants.photo = Object.fromEntries(slotIds.map((s) => [s, { assetId: subject }]));
         for (const [variant, photos] of Object.entries(variants)) {
           const r = await renderGraphic(deps, {
             template: manifest.id,
@@ -247,10 +320,17 @@ describe('templates', () => {
           });
           expect([r.width, r.height]).toEqual([layout.width, layout.height]);
           const meta = await sharp((await store.get(BUCKETS.renders, r.path))!).metadata();
-          expect([meta.width, meta.height, meta.format]).toEqual([layout.width, layout.height, 'png']);
+          expect([meta.width, meta.height, meta.format]).toEqual([
+            layout.width,
+            layout.height,
+            'png',
+          ]);
           if (OUT) {
             mkdirSync(OUT, { recursive: true });
-            writeFileSync(join(OUT, `${manifest.id}-${aspect.replace(':', 'x')}-${variant}.png`), (await store.get(BUCKETS.renders, r.path))!);
+            writeFileSync(
+              join(OUT, `${manifest.id}-${aspect.replace(':', 'x')}-${variant}.png`),
+              (await store.get(BUCKETS.renders, r.path))!,
+            );
           }
         }
       }
@@ -261,20 +341,47 @@ describe('templates', () => {
     const small = await photo(300, 200);
     const ok = await photo(1600, 1000);
     const base = SAMPLE_DATA['player-vs-player']!;
-    const run = (data: object) => renderGraphic(deps, { template: 'player-vs-player', aspect: '16:9', data });
+    const run = (data: object) =>
+      renderGraphic(deps, { template: 'player-vs-player', aspect: '16:9', data });
 
-    await expect(run({ ...base, photos: { photo_a: { assetId: small } } })).rejects.toMatchObject({ code: 'photo_too_small' });
-    const { player_a: _omit, ...noName } = base.texts!;
+    await expect(run({ ...base, photos: { photo_a: { assetId: small } } })).rejects.toMatchObject({
+      code: 'photo_too_small',
+    });
+    const noName = { ...base.texts };
+    delete noName.player_a;
     await expect(run({ ...base, texts: noName })).rejects.toMatchObject({ code: 'missing_data' });
     await expect(
-      run({ ...base, texts: { ...base.texts, player_a: 'Maximilian Alexander Konstantinopoulos-Featherstonehaugh' } }),
+      run({
+        ...base,
+        texts: {
+          ...base.texts,
+          player_a: 'Maximilian Alexander Konstantinopoulos-Featherstonehaugh',
+        },
+      }),
     ).rejects.toMatchObject({ code: 'text_overflow' });
-    await expect(run({ ...base, flags: { a_flag: 'zz' } })).rejects.toMatchObject({ code: 'unknown_flag' });
-    await expect(run({ ...base, photos: { nope: { assetId: ok } } })).rejects.toMatchObject({ code: 'missing_data' });
+    await expect(run({ ...base, flags: { a_flag: 'zz' } })).rejects.toMatchObject({
+      code: 'unknown_flag',
+    });
+    await expect(run({ ...base, photos: { nope: { assetId: ok } } })).rejects.toMatchObject({
+      code: 'missing_data',
+    });
     await expect(
-      renderGraphic(deps, { template: 'chess-puzzle', aspect: '16:9', data: { ...SAMPLE_DATA['chess-puzzle']!, boards: { position: 'xxxxxxxx/8/8/8/8/8/8/8 w - - 0 1' } } }),
+      renderGraphic(deps, {
+        template: 'chess-puzzle',
+        aspect: '16:9',
+        data: {
+          ...SAMPLE_DATA['chess-puzzle']!,
+          boards: { position: 'xxxxxxxx/8/8/8/8/8/8/8 w - - 0 1' },
+        },
+      }),
     ).rejects.toBeInstanceOf(GraphicError);
-    await expect(renderGraphic(deps, { template: 'chess-puzzle', aspect: '1:1', data: SAMPLE_DATA['chess-puzzle']! })).rejects.toMatchObject({ code: 'unknown_aspect' });
+    await expect(
+      renderGraphic(deps, {
+        template: 'chess-puzzle',
+        aspect: '1:1',
+        data: SAMPLE_DATA['chess-puzzle']!,
+      }),
+    ).rejects.toMatchObject({ code: 'unknown_aspect' });
   });
 
   it('draws the attribution a licence requires even if the caller passes none, and fails if the template cannot', async () => {
@@ -286,7 +393,10 @@ describe('templates', () => {
     });
     expect(r.photos).toHaveLength(1);
     const png = (await store.get(BUCKETS.renders, r.path))!;
-    const strip = await sharp(png).extract({ left: 56, top: 618, width: 624, height: 30 }).raw().toBuffer();
+    const strip = await sharp(png)
+      .extract({ left: 56, top: 618, width: 624, height: 30 })
+      .raw()
+      .toBuffer();
     const bg = strip.subarray(0, 3);
     expect([...strip].some((v, i) => Math.abs(v - bg[i % 3]!) > 40)).toBe(true);
   });

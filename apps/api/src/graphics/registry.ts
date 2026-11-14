@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { TemplateManifest, zodIssues } from '@smb/shared';
+import { TemplateManifest, minimumPhotoSize, zodIssues, type PhotoSlot } from '@smb/shared';
 import { GraphicError } from './text.js';
 
 /** Repo-level /config/templates (same depth from src/ and dist/). */
@@ -47,7 +47,9 @@ export class TemplateConfigError extends Error {
 }
 
 /** Reads and validates every `*.json` in the templates folder (files starting with "_" are ignored). */
-export function loadTemplates(dir: string = process.env.SMB_TEMPLATE_DIR ?? DEFAULT_TEMPLATE_DIR): TemplateRegistry {
+export function loadTemplates(
+  dir: string = process.env.SMB_TEMPLATE_DIR ?? DEFAULT_TEMPLATE_DIR,
+): TemplateRegistry {
   if (!existsSync(dir)) throw new TemplateConfigError([`templates folder not found at ${dir}`]);
   const issues: string[] = [];
   const manifests: TemplateManifest[] = [];
@@ -62,7 +64,8 @@ export function loadTemplates(dir: string = process.env.SMB_TEMPLATE_DIR ?? DEFA
     }
     const parsed = TemplateManifest.safeParse(json);
     if (!parsed.success) issues.push(...zodIssues(file, parsed.error));
-    else if (file !== `${parsed.data.id}.json`) issues.push(`${file}: the file must be named ${parsed.data.id}.json`);
+    else if (file !== `${parsed.data.id}.json`)
+      issues.push(`${file}: the file must be named ${parsed.data.id}.json`);
     else manifests.push(parsed.data);
   }
   if (issues.length) throw new TemplateConfigError(issues);
@@ -71,4 +74,37 @@ export function loadTemplates(dir: string = process.env.SMB_TEMPLATE_DIR ?? DEFA
   } catch (err) {
     throw new TemplateConfigError([err instanceof Error ? err.message : String(err)]);
   }
+}
+
+/**
+ * Photo size for image selection (1.8): the smallest photograph that fills every slot of the template's 16:9 layout
+ * without being enlarged. A template with no photograph slot, or an unknown one, gives `undefined` (use the default).
+ */
+export function slotForTemplate(
+  registry: TemplateRegistry,
+): (template: string | undefined) => PhotoSlot | undefined {
+  return (template) => {
+    if (!template || !registry.has(template)) return undefined;
+    const manifest = registry.get(template);
+    if (!manifest.aspects['16:9']) return undefined;
+    const size = minimumPhotoSize(manifest, '16:9');
+    return size.minWidth > 0 ? size : undefined;
+  };
+}
+
+/** Problems with the templates post types name (an unknown template would only fail when a graphic is rendered). */
+export function templateReferenceIssues(
+  configs: { file: string; config: { imageRules: { template?: string } } }[],
+  registry: TemplateRegistry,
+): string[] {
+  const issues: string[] = [];
+  for (const { file, config } of configs) {
+    const t = config.imageRules.template;
+    if (t && !registry.has(t)) {
+      issues.push(
+        `${file}: imageRules.template "${t}" is not a template (known: ${registry.names().join(', ')})`,
+      );
+    }
+  }
+  return issues;
 }

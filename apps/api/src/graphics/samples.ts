@@ -74,7 +74,8 @@ export const SAMPLE_DATA: Record<string, Omit<RenderDataInput, 'photos'>> = {
   'chess-news': {
     texts: {
       headline: 'FIDE confirms the dates for the next Candidates Tournament',
-      summary: 'The event will be played over two weeks, with the winner earning a World Championship match.',
+      summary:
+        'The event will be played over two weeks, with the winner earning a World Championship match.',
       source_line: 'Source: FIDE announcement',
     },
   },

@@ -94,7 +94,8 @@ export function fitText(raw: string, box: TextBox, style: TextStyle, label: stri
   if (box.overflow === 'ellipsis') {
     const lines = wrap(text, box.w, min, style).slice(0, box.maxLines);
     let last = lines[lines.length - 1] ?? '';
-    while (last.length > 1 && measure(`${last}…`, min, style) > box.w) last = last.slice(0, -1).trimEnd();
+    while (last.length > 1 && measure(`${last}…`, min, style) > box.w)
+      last = last.slice(0, -1).trimEnd();
     lines[lines.length - 1] = `${last}…`;
     if (fits(lines, box, min, style)) return { lines, size: min, truncated: true };
   }
@@ -118,11 +119,21 @@ export function textPath(
   const descent = -font.descender * scale;
   const lh = fitted.size * box.lineHeight;
   const blockH = fitted.lines.length * lh;
-  const top = valign === 'top' ? box.y : valign === 'bottom' ? box.y + box.h - blockH : box.y + (box.h - blockH) / 2;
+  const top =
+    valign === 'top'
+      ? box.y
+      : valign === 'bottom'
+        ? box.y + box.h - blockH
+        : box.y + (box.h - blockH) / 2;
   const parts: string[] = [];
   fitted.lines.forEach((line, i) => {
     const width = measure(line, fitted.size, style);
-    let x = align === 'left' ? box.x : align === 'right' ? box.x + box.w - width : box.x + (box.w - width) / 2;
+    let x =
+      align === 'left'
+        ? box.x
+        : align === 'right'
+          ? box.x + box.w - width
+          : box.x + (box.w - width) / 2;
     const baseline = top + i * lh + (lh - (ascent + descent)) / 2 + ascent;
     const glyphs = font.stringToGlyphs(line);
     glyphs.forEach((g, gi) => {

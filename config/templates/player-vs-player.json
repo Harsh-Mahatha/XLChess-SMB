@@ -1,9 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "player-vs-player",
-  "aliases": [
-    "game-result"
-  ],
+  "aliases": ["game-result"],
   "name": "Player vs Player",
   "version": "1.0.0",
   "description": "Two framed player photographs on a split charcoal and navy background, with names, flags, ratings, a gold VS and an optional result. Also used as the game-result layout.",
