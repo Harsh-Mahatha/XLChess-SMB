@@ -1,0 +1,48 @@
+import { z } from 'zod';
+
+const hash = z.string().regex(/^[0-9a-f]{64}$/, 'a sha256 hash');
+
+export const ApproveBody = z
+  .object({
+    contentHash: hash,
+    channels: z
+      .array(z.enum(['x', 'facebook', 'instagram', 'discord']))
+      .min(1)
+      .max(4),
+    scheduledFor: z.coerce.date().optional(),
+    acknowledgeFailedChecks: z.boolean().optional(),
+  })
+  .strict();
+export type ApproveBody = z.infer<typeof ApproveBody>;
+
+export const EditBody = z
+  .object({
+    baseRevisionId: z.string().uuid(),
+    headline: z.string().trim().min(1).max(300).optional(),
+    caption: z.string().max(10_000).optional(),
+    channelTexts: z.record(z.string().max(10_000)).optional(),
+    altText: z.string().max(1500).optional(),
+    changeNote: z.string().trim().max(500).optional(),
+  })
+  .strict();
+export type EditBody = z.infer<typeof EditBody>;
+
+export const ActionBody = z
+  .object({
+    feedback: z.string().max(4000).optional(),
+    feedbackTags: z.array(z.string().max(40)).max(10).optional(),
+    deferUntil: z.coerce.date().optional(),
+    candidateId: z.string().uuid().optional(),
+    revisionId: z.string().uuid().optional(),
+  })
+  .strict();
+export type ActionBody = z.infer<typeof ActionBody>;
+
+export const QueueQuery = z
+  .object({
+    status: z.enum(['awaiting_review', 'deferred']).default('awaiting_review'),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict();
+
+export const IdParam = z.object({ id: z.string().uuid() });
