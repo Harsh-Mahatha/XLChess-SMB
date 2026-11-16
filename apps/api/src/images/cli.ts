@@ -3,6 +3,7 @@ import { loadConfigSet } from '../config/index.js';
 import { getDb } from '../db/client.js';
 import { loadEnv } from '../env.js';
 import { USER_AGENT } from '../sources/index.js';
+import { loadTemplates, slotForTemplate } from '../graphics/registry.js';
 import { InMemoryObjectStore, SupabaseObjectStore, type ObjectStore } from '../storage/index.js';
 import { HttpImageDownloader } from './download.js';
 import { discoverImages } from './discover.js';
@@ -64,6 +65,7 @@ const out = await discoverImages(
     store,
     downloader: new HttpImageDownloader({ userAgent }),
     allowShareAlike: values['reject-share-alike'] ? false : env.IMAGE_ALLOW_SHARE_ALIKE,
+    slotForTemplate: slotForTemplate(loadTemplates()),
   },
   values.opportunity,
 );

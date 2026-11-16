@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "id": "chess-puzzle",
+  "aliases": [],
+  "name": "Chess Puzzle",
+  "version": "1.0.0",
+  "description": "A board position from a FEN, the question and an optional hint.",
+  "aspects": {
+    "16:9": {
+      "width": 1200,
+      "height": 675,
+      "background": "#26282b",
+      "elements": [
+        {
+          "id": "bar",
+          "type": "rect",
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 675,
+          "fill": "#c9a45c"
+        },
+        {
+          "id": "board_frame",
+          "type": "rect",
+          "x": 52,
+          "y": 62,
+          "w": 512,
+          "h": 512,
+          "stroke": "#c9a45c",
+          "strokeWidth": 3
+        },
+        {
+          "id": "board",
+          "type": "board",
+          "bind": "position",
+          "required": true,
+          "x": 56,
+          "y": 66,
+          "size": 504,
+          "light": "#e9dcc0",
+          "dark": "#8f6b3e",
+          "orientable": true
+        },
+        {
+          "id": "kicker",
+          "type": "text",
+          "literal": "Chess puzzle",
+          "required": true,
+          "x": 620,
+          "y": 62,
+          "w": 520,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper"
+        },
+        {
+          "id": "puzzle_title",
+          "type": "text",
+          "required": true,
+          "bind": "puzzle_title",
+          "x": 620,
+          "y": 110,
+          "w": 524,
+          "h": 230,
+          "font": "display",
+          "size": {
+            "max": 84,
+            "min": 34
+          },
+          "maxLines": 3,
+          "fill": "#ffffff",
+          "textCase": "upper",
+          "valign": "top",
+          "lineHeight": 1.05
+        },
+        {
+          "id": "prompt",
+          "type": "text",
+          "required": true,
+          "bind": "prompt",
+          "x": 620,
+          "y": 360,
+          "w": 524,
+          "h": 110,
+          "font": "body-extrabold",
+          "size": {
+            "max": 38,
+            "min": 20
+          },
+          "maxLines": 2,
+          "fill": "#c9a45c",
+          "valign": "top"
+        },
+        {
+          "id": "hint",
+          "type": "text",
+          "required": false,
+          "bind": "hint",
+          "x": 620,
+          "y": 480,
+          "w": 524,
+          "h": 90,
+          "font": "body",
+          "size": {
+            "max": 24,
+            "min": 15
+          },
+          "maxLines": 3,
+          "fill": "#d6d9df",
+          "valign": "top"
+        },
+        {
+          "id": "source_line",
+          "type": "text",
+          "required": false,
+          "bind": "source_line",
+          "x": 56,
+          "y": 596,
+          "w": 700,
+          "h": 30,
+          "font": "body-semibold",
+          "size": {
+            "max": 20,
+            "min": 13
+          },
+          "fill": "#9aa0aa"
+        },
+        {
+          "id": "pieces_credit",
+          "type": "text",
+          "literal": "Chess pieces: Cburnett, Wikimedia Commons, CC BY-SA 3.0",
+          "required": true,
+          "x": 56,
+          "y": 632,
+          "w": 760,
+          "h": 24,
+          "font": "body",
+          "size": {
+            "max": 13,
+            "min": 13
+          },
+          "fill": "#9aa0aa"
+        },
+        {
+          "id": "brand",
+          "type": "text",
+          "literal": "XLCHESS",
+          "required": true,
+          "x": 1004,
+          "y": 626,
+          "w": 140,
+          "h": 24,
+          "font": "display-medium",
+          "size": {
+            "max": 18,
+            "min": 18
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.2,
+          "align": "right",
+          "textCase": "upper"
+        }
+      ]
+    }
+  }
+}

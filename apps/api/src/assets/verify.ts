@@ -238,11 +238,17 @@ export async function verifyRegion(deps: AssetDeps, check: RegionCheck): Promise
     rect: check.rect,
     fit: check.fit,
   };
-  if (render.parent_asset_id !== check.sourceId) {
+  // The photograph must be the render's parent or one of the photographs recorded for it (a render can hold several).
+  const recorded =
+    render.parent_asset_id === check.sourceId ||
+    (await deps.db.render_sources.count({
+      where: { render_id: check.renderId, source_id: check.sourceId },
+    })) > 0;
+  if (!recorded) {
     return record(deps, check.renderId, {
       kind,
       failures: ['parent_changed'],
-      detail: { ...detail, message: 'the render does not name this photograph as its parent' },
+      detail: { ...detail, message: 'the render does not name this photograph as a source' },
     });
   }
   const source = await deps.db.media_assets.findUniqueOrThrow({ where: { id: check.sourceId } });

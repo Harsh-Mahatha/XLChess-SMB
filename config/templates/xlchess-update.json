@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "id": "xlchess-update",
+  "aliases": [],
+  "name": "XLChess Product Update",
+  "version": "1.0.0",
+  "description": "A product announcement: headline, short body and call to action.",
+  "aspects": {
+    "16:9": {
+      "width": 1200,
+      "height": 675,
+      "background": "#0e1930",
+      "elements": [
+        {
+          "id": "bar",
+          "type": "rect",
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 675,
+          "fill": "#c9a45c"
+        },
+        {
+          "id": "kicker",
+          "type": "text",
+          "literal": "XLChess update",
+          "required": true,
+          "x": 64,
+          "y": 56,
+          "w": 700,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper"
+        },
+        {
+          "id": "version_tag",
+          "type": "text",
+          "required": false,
+          "bind": "version_tag",
+          "x": 880,
+          "y": 52,
+          "w": 256,
+          "h": 42,
+          "font": "display-medium",
+          "size": {
+            "max": 30,
+            "min": 16
+          },
+          "fill": "#ffffff",
+          "align": "right",
+          "tracking": 0.08
+        },
+        {
+          "id": "headline",
+          "type": "text",
+          "required": true,
+          "bind": "headline",
+          "x": 64,
+          "y": 120,
+          "w": 1072,
+          "h": 260,
+          "font": "display",
+          "size": {
+            "max": 100,
+            "min": 40
+          },
+          "maxLines": 3,
+          "fill": "#ffffff",
+          "textCase": "upper",
+          "valign": "top",
+          "lineHeight": 1.05
+        },
+        {
+          "id": "body",
+          "type": "text",
+          "required": true,
+          "bind": "body",
+          "x": 64,
+          "y": 400,
+          "w": 1000,
+          "h": 140,
+          "font": "body",
+          "size": {
+            "max": 32,
+            "min": 18
+          },
+          "maxLines": 4,
+          "fill": "#d6d9df",
+          "valign": "top"
+        },
+        {
+          "id": "cta",
+          "type": "text",
+          "required": false,
+          "bind": "cta",
+          "x": 64,
+          "y": 565,
+          "w": 800,
+          "h": 50,
+          "font": "body-extrabold",
+          "size": {
+            "max": 30,
+            "min": 16
+          },
+          "fill": "#c9a45c"
+        },
+        {
+          "id": "brand",
+          "type": "text",
+          "literal": "XLCHESS",
+          "required": true,
+          "x": 1004,
+          "y": 626,
+          "w": 140,
+          "h": 24,
+          "font": "display-medium",
+          "size": {
+            "max": 18,
+            "min": 18
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.2,
+          "align": "right",
+          "textCase": "upper"
+        }
+      ]
+    }
+  }
+}

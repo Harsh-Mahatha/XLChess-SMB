@@ -34,6 +34,7 @@
     "images:discover": "npm run images:discover -w @smb/api --",
     "assets:verify": "npm run assets:verify -w @smb/api --",
     "assets:purge": "npm run assets:purge -w @smb/api --",
+    "graphics:render": "npm run graphics:render -w @smb/api --",
     "installer:package": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/build-package.ps1",
     "installer:test": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Import-Module Pester; Invoke-Pester installer/tests\""
   },

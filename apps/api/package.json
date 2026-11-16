@@ -16,7 +16,8 @@
     "candidates:generate": "tsx --env-file-if-exists=../../.env src/generation/cli.ts",
     "images:discover": "tsx --env-file-if-exists=../../.env src/images/cli.ts",
     "assets:verify": "tsx --env-file-if-exists=../../.env src/assets/cli.ts verify",
-    "assets:purge": "tsx --env-file-if-exists=../../.env src/assets/cli.ts purge"
+    "assets:purge": "tsx --env-file-if-exists=../../.env src/assets/cli.ts purge",
+    "graphics:render": "tsx --env-file-if-exists=../../.env src/graphics/cli.ts"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.0",
@@ -24,6 +25,7 @@
     "@smb/shared": "*",
     "chess.js": "^1.4.0",
     "express": "^5.0.1",
+    "opentype.js": "^1.3.4",
     "pino": "^9.6.0",
     "pino-http": "^10.3.0",
     "sharp": "^0.34.5",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/opentype.js": "^1.3.10",
     "@types/supertest": "^6.0.2",
     "prisma": "^6.1.0",
     "supertest": "^7.0.0",

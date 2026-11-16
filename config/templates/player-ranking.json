@@ -1,0 +1,456 @@
+{
+  "schemaVersion": 1,
+  "id": "player-ranking",
+  "aliases": [],
+  "name": "Player Ranking",
+  "version": "1.0.0",
+  "description": "A ranked list of up to five players with flags and ratings.",
+  "aspects": {
+    "16:9": {
+      "width": 1200,
+      "height": 675,
+      "background": "#0e1930",
+      "elements": [
+        {
+          "id": "bar",
+          "type": "rect",
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 675,
+          "fill": "#c9a45c"
+        },
+        {
+          "id": "kicker",
+          "type": "text",
+          "literal": "Rankings",
+          "required": true,
+          "x": 56,
+          "y": 40,
+          "w": 400,
+          "h": 34,
+          "font": "display-medium",
+          "size": {
+            "max": 26,
+            "min": 26
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.18,
+          "textCase": "upper"
+        },
+        {
+          "id": "title",
+          "type": "text",
+          "required": true,
+          "bind": "title",
+          "x": 56,
+          "y": 76,
+          "w": 1088,
+          "h": 70,
+          "font": "display",
+          "size": {
+            "max": 56,
+            "min": 28
+          },
+          "fill": "#ffffff",
+          "textCase": "upper"
+        },
+        {
+          "id": "row1",
+          "type": "rect",
+          "x": 56,
+          "y": 160,
+          "w": 1088,
+          "h": 78,
+          "fill": "#13213f"
+        },
+        {
+          "id": "rank1",
+          "type": "text",
+          "literal": "1",
+          "required": true,
+          "x": 70,
+          "y": 168,
+          "w": 60,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 48,
+            "min": 48
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "r1_flag",
+          "type": "flag",
+          "bind": "r1_flag",
+          "required": false,
+          "x": 150,
+          "y": 177,
+          "w": 60,
+          "h": 45,
+          "radius": 3
+        },
+        {
+          "id": "r1_name",
+          "type": "text",
+          "required": true,
+          "bind": "r1_name",
+          "x": 230,
+          "y": 168,
+          "w": 640,
+          "h": 62,
+          "font": "display-medium",
+          "size": {
+            "max": 42,
+            "min": 22
+          },
+          "fill": "#ffffff",
+          "textCase": "upper",
+          "tracking": 0.02
+        },
+        {
+          "id": "r1_rating",
+          "type": "text",
+          "required": true,
+          "bind": "r1_rating",
+          "x": 880,
+          "y": 168,
+          "w": 240,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 46,
+            "min": 22
+          },
+          "fill": "#c9a45c",
+          "align": "right"
+        },
+        {
+          "id": "row2",
+          "type": "rect",
+          "x": 56,
+          "y": 250,
+          "w": 1088,
+          "h": 78,
+          "fill": "#101c36"
+        },
+        {
+          "id": "rank2",
+          "type": "text",
+          "literal": "2",
+          "required": true,
+          "x": 70,
+          "y": 258,
+          "w": 60,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 48,
+            "min": 48
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "r2_flag",
+          "type": "flag",
+          "bind": "r2_flag",
+          "required": false,
+          "x": 150,
+          "y": 267,
+          "w": 60,
+          "h": 45,
+          "radius": 3
+        },
+        {
+          "id": "r2_name",
+          "type": "text",
+          "required": true,
+          "bind": "r2_name",
+          "x": 230,
+          "y": 258,
+          "w": 640,
+          "h": 62,
+          "font": "display-medium",
+          "size": {
+            "max": 42,
+            "min": 22
+          },
+          "fill": "#ffffff",
+          "textCase": "upper",
+          "tracking": 0.02
+        },
+        {
+          "id": "r2_rating",
+          "type": "text",
+          "required": true,
+          "bind": "r2_rating",
+          "x": 880,
+          "y": 258,
+          "w": 240,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 46,
+            "min": 22
+          },
+          "fill": "#c9a45c",
+          "align": "right"
+        },
+        {
+          "id": "row3",
+          "type": "rect",
+          "x": 56,
+          "y": 340,
+          "w": 1088,
+          "h": 78,
+          "fill": "#13213f"
+        },
+        {
+          "id": "rank3",
+          "type": "text",
+          "literal": "3",
+          "required": true,
+          "x": 70,
+          "y": 348,
+          "w": 60,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 48,
+            "min": 48
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "r3_flag",
+          "type": "flag",
+          "bind": "r3_flag",
+          "required": false,
+          "x": 150,
+          "y": 357,
+          "w": 60,
+          "h": 45,
+          "radius": 3
+        },
+        {
+          "id": "r3_name",
+          "type": "text",
+          "required": true,
+          "bind": "r3_name",
+          "x": 230,
+          "y": 348,
+          "w": 640,
+          "h": 62,
+          "font": "display-medium",
+          "size": {
+            "max": 42,
+            "min": 22
+          },
+          "fill": "#ffffff",
+          "textCase": "upper",
+          "tracking": 0.02
+        },
+        {
+          "id": "r3_rating",
+          "type": "text",
+          "required": true,
+          "bind": "r3_rating",
+          "x": 880,
+          "y": 348,
+          "w": 240,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 46,
+            "min": 22
+          },
+          "fill": "#c9a45c",
+          "align": "right"
+        },
+        {
+          "id": "row4",
+          "type": "rect",
+          "x": 56,
+          "y": 430,
+          "w": 1088,
+          "h": 78,
+          "fill": "#101c36"
+        },
+        {
+          "id": "rank4",
+          "type": "text",
+          "literal": "4",
+          "required": true,
+          "x": 70,
+          "y": 438,
+          "w": 60,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 48,
+            "min": 48
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "r4_flag",
+          "type": "flag",
+          "bind": "r4_flag",
+          "required": false,
+          "x": 150,
+          "y": 447,
+          "w": 60,
+          "h": 45,
+          "radius": 3
+        },
+        {
+          "id": "r4_name",
+          "type": "text",
+          "required": false,
+          "bind": "r4_name",
+          "x": 230,
+          "y": 438,
+          "w": 640,
+          "h": 62,
+          "font": "display-medium",
+          "size": {
+            "max": 42,
+            "min": 22
+          },
+          "fill": "#ffffff",
+          "textCase": "upper",
+          "tracking": 0.02
+        },
+        {
+          "id": "r4_rating",
+          "type": "text",
+          "required": false,
+          "bind": "r4_rating",
+          "x": 880,
+          "y": 438,
+          "w": 240,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 46,
+            "min": 22
+          },
+          "fill": "#c9a45c",
+          "align": "right"
+        },
+        {
+          "id": "row5",
+          "type": "rect",
+          "x": 56,
+          "y": 520,
+          "w": 1088,
+          "h": 78,
+          "fill": "#13213f"
+        },
+        {
+          "id": "rank5",
+          "type": "text",
+          "literal": "5",
+          "required": true,
+          "x": 70,
+          "y": 528,
+          "w": 60,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 48,
+            "min": 48
+          },
+          "fill": "#c9a45c",
+          "align": "center"
+        },
+        {
+          "id": "r5_flag",
+          "type": "flag",
+          "bind": "r5_flag",
+          "required": false,
+          "x": 150,
+          "y": 537,
+          "w": 60,
+          "h": 45,
+          "radius": 3
+        },
+        {
+          "id": "r5_name",
+          "type": "text",
+          "required": false,
+          "bind": "r5_name",
+          "x": 230,
+          "y": 528,
+          "w": 640,
+          "h": 62,
+          "font": "display-medium",
+          "size": {
+            "max": 42,
+            "min": 22
+          },
+          "fill": "#ffffff",
+          "textCase": "upper",
+          "tracking": 0.02
+        },
+        {
+          "id": "r5_rating",
+          "type": "text",
+          "required": false,
+          "bind": "r5_rating",
+          "x": 880,
+          "y": 528,
+          "w": 240,
+          "h": 62,
+          "font": "display",
+          "size": {
+            "max": 46,
+            "min": 22
+          },
+          "fill": "#c9a45c",
+          "align": "right"
+        },
+        {
+          "id": "footnote",
+          "type": "text",
+          "required": false,
+          "bind": "footnote",
+          "x": 56,
+          "y": 622,
+          "w": 900,
+          "h": 30,
+          "font": "body",
+          "size": {
+            "max": 18,
+            "min": 12
+          },
+          "fill": "#9aa0aa"
+        },
+        {
+          "id": "brand",
+          "type": "text",
+          "literal": "XLCHESS",
+          "required": true,
+          "x": 1004,
+          "y": 626,
+          "w": 140,
+          "h": 24,
+          "font": "display-medium",
+          "size": {
+            "max": 18,
+            "min": 18
+          },
+          "fill": "#c9a45c",
+          "tracking": 0.2,
+          "align": "right",
+          "textCase": "upper"
+        }
+      ]
+    }
+  }
+}
