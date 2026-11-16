@@ -294,6 +294,7 @@ model post_revisions {
   post_candidates      post_candidates   @relation(fields: [candidate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_revisions       post_revisions?   @relation("post_revisionsTopost_revisions", fields: [parent_revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   other_post_revisions post_revisions[]  @relation("post_revisionsTopost_revisions")
+  candidate_renders    candidate_renders[]
   publications         publications[]
   review_actions       review_actions[]
   revision_assets      revision_assets[]
@@ -447,6 +448,7 @@ model review_actions {
   post_revisions     post_revisions?    @relation(fields: [revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([opportunity_id, created_at], map: "review_actions_opportunity")
+  @@index([reviewer_id, created_at(sort: Desc)], map: "review_actions_reviewer")
   @@index([revision_id], map: "review_actions_revision")
   @@schema("smb")
 }
@@ -583,11 +585,14 @@ model candidate_renders {
   aspect           String
   render_key       String
   created_at       DateTime        @default(now()) @db.Timestamptz(6)
+  revision_id      String?         @db.Uuid
   post_candidates  post_candidates @relation(fields: [candidate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   media_assets     media_assets    @relation(fields: [render_asset_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_revisions   post_revisions? @relation(fields: [revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([candidate_id, aspect, render_key])
   @@index([candidate_id, aspect], map: "candidate_renders_candidate")
+  @@index([revision_id], map: "candidate_renders_revision")
   @@schema("smb")
 }
 
