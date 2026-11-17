@@ -8,6 +8,7 @@ import {
   type GenerationInput,
 } from '@smb/shared';
 import { StoryNotReadyError, assertReadyToGenerate } from '../story/service.js';
+import { loadReviewerFeedback } from './feedback.js';
 
 export class GenerationNotReadyError extends Error {
   constructor(
@@ -34,6 +35,10 @@ export async function buildInputForOpportunity(
   db: PrismaClient,
   channels: ChannelsRegistry,
   opportunityId: string,
+  options: {
+    /** Include what the reviewer asked for when they sent the opportunity back (a regeneration). */
+    withFeedback?: boolean;
+  } = {},
 ): Promise<GenerationSubject> {
   const opp = await db.post_opportunities.findUniqueOrThrow({ where: { id: opportunityId } });
   const selection = await db.story_selections.findFirst({
@@ -85,6 +90,10 @@ export async function buildInputForOpportunity(
       opportunityId,
       `the selected angle needs ${missing.join(', ')}, which is not publishable`,
     );
+  }
+  if (options.withFeedback) {
+    const feedback = await loadReviewerFeedback(db, opportunityId);
+    if (feedback) input.reviewerFeedback = feedback;
   }
   return { input, selectionId: selection.id, packageId };
 }

@@ -1,11 +1,20 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { channelLength, type ChannelsRegistry } from '@smb/shared';
+import {
+  WRONG_ANGLE_TAG,
+  changedFields,
+  channelLength,
+  classifyChange,
+  normaliseTags,
+  type ChangeKind,
+  type ChannelsRegistry,
+} from '@smb/shared';
 import { AssetIntegrityError, ensureAssetsIntact } from '../assets/index.js';
 import { revisionHash } from '../generation/service.js';
 import { AssetLicenceError, assertAssetsLicensed } from '../images/guard.js';
 import type { ObjectStore } from '../storage/index.js';
+import { StoryNotReadyError, reselectStory } from '../story/service.js';
 import { channelPreviews } from './previews.js';
-import { pickGraphic } from './read.js';
+import { pendingRewrites, pickGraphic } from './read.js';
 
 /** A refusal a reviewer can act on. The route turns it into the API's error shape. */
 export class ReviewError extends Error {
@@ -241,7 +250,10 @@ export async function approveRevision(
     if (!spec.enabled)
       throw new ReviewError(422, 'channel_disabled', `${spec.name} is switched off`);
   }
-  const validation = candidate.validation as { passed?: boolean } | null;
+  // A rewrite by the model carries its own checks; a first revision carries the candidate's.
+  const validation = (
+    rev.author_kind === 'ai' && rev.validation ? rev.validation : candidate.validation
+  ) as { passed?: boolean } | null;
   if (validation?.passed === false && rev.author_kind === 'ai' && !input.acknowledgeFailedChecks) {
     throw new ReviewError(
       422,
@@ -380,6 +392,7 @@ export async function approveRevision(
               author_id: actor.userId,
               change_note:
                 'Approval: the graphic was added to the revision so the approval covers it',
+              change_kind: 'binding',
               revision_claims: { create: claims.map((c) => ({ claim_id: c.claim_id })) },
               revision_assets: { create: [{ asset_id: graphicAsset.id, role: 'graphic' }] },
             },
@@ -448,6 +461,10 @@ export interface EditInput {
   channelTexts?: Record<string, string>;
   altText?: string;
   changeNote?: string;
+  /** Whether this corrects something that was wrong or improves the writing. Worked out from the tags if left out. */
+  changeKind?: ChangeKind;
+  /** What was wrong, from the feedback vocabulary (free tags are accepted too). */
+  changeTags?: string[];
 }
 
 export interface EditResult {
@@ -460,6 +477,10 @@ export interface EditResult {
   graphicRegenerated: boolean;
   /** True when an approval was in force and this edit withdrew it. */
   approvalWithdrawn: boolean;
+  /** Which parts changed: `headline`, `caption`, `altText`, `channel:<id>`. */
+  changedFields: string[];
+  /** `factual`, `creative` or `mixed`; null when the reviewer did not say and no tag told us. */
+  changeKind: ChangeKind | null;
 }
 
 /** Saves a person's change as a new immutable revision. It never alters an earlier one. */
@@ -472,6 +493,11 @@ export async function editCandidate(
   const { db } = ctx;
   const candidate = await db.post_candidates.findUnique({ where: { id: candidateId } });
   if (!candidate) throw new ReviewError(404, 'not_found', 'Candidate not found');
+  const changeTags = normaliseTags(input.changeTags);
+  if (changeTags.length > 10 || changeTags.some((t) => t.length > 40)) {
+    throw new ReviewError(422, 'bad_tags', 'Use at most 10 tags of up to 40 characters');
+  }
+  const changeKind = classifyChange(input.changeKind, changeTags);
 
   const result = await db.$transaction(
     async (tx) => {
@@ -525,6 +551,15 @@ export async function editCandidate(
         JSON.stringify(sortKeys(channelTexts)) ===
           JSON.stringify(sortKeys(stringMap(base.channel_texts)));
       if (unchanged) throw new ReviewError(422, 'no_change', 'Nothing was changed');
+      const changed = changedFields(
+        {
+          headline: base.headline,
+          caption: base.caption,
+          channelTexts: stringMap(base.channel_texts),
+          altText: base.alt_text,
+        },
+        { headline, caption, channelTexts, altText: altText ?? null },
+      );
 
       // Text that no longer fits a channel is refused now, not discovered at approval.
       const tooLong = ctx.channels.channels
@@ -573,6 +608,9 @@ export async function editCandidate(
           author_kind: 'human',
           author_id: actor.userId,
           change_note: input.changeNote ?? null,
+          change_kind: changeKind,
+          changed_fields: changed,
+          change_tags: changeTags,
           revision_claims: { create: base.revision_claims.map((c) => ({ claim_id: c.claim_id })) },
           revision_assets: {
             create: keepAssets.map((a) => ({ asset_id: a.asset_id, role: a.role })),
@@ -624,6 +662,9 @@ export async function editCandidate(
             baseRevisionId: base.id,
             headlineChanged,
             approvalWithdrawn: withdrawn,
+            changedFields: changed,
+            changeKind,
+            changeTags,
           },
         },
       });
@@ -638,6 +679,8 @@ export async function editCandidate(
         graphicStale: headlineChanged && hadGraphic,
         graphicRegenerated: false,
         approvalWithdrawn: withdrawn,
+        changedFields: changed,
+        changeKind,
       };
     },
     { timeout: 20_000 },
@@ -679,6 +722,8 @@ export interface TransitionResult {
   status: string;
   /** For regenerate: the job that will write the new candidates. */
   jobId: string | null;
+  /** For a regenerate tagged `wrong_angle`: the story the new candidates will tell instead. */
+  newAngleId: string | null;
   replayed: boolean;
 }
 
@@ -703,7 +748,7 @@ export async function transitionOpportunity(
   input: TransitionInput = {},
 ): Promise<TransitionResult> {
   if (kind === 'approve') throw new Error('approve has its own function');
-  const tags = [...new Set((input.feedbackTags ?? []).map((t) => t.trim()).filter(Boolean))];
+  const tags = normaliseTags(input.feedbackTags);
   const feedback = input.feedback?.trim() || null;
   if (feedback && feedback.length > MAX_FEEDBACK) {
     throw new ReviewError(
@@ -739,6 +784,7 @@ export async function transitionOpportunity(
             opportunityId,
             status: opp.status,
             jobId: null,
+            newAngleId: null,
             replayed: true,
           };
         }
@@ -792,6 +838,31 @@ export async function transitionOpportunity(
         data: { status: rule.to },
       });
 
+      // "Tell a different story": pick another angle now, so a request that cannot be met is refused, not queued.
+      let newAngleId: string | null = null;
+      if (kind === 'regenerate' && tags.includes(WRONG_ANGLE_TAG)) {
+        const noOther = (details: unknown) =>
+          new ReviewError(
+            422,
+            'no_other_angle',
+            'The research supports no other story for this post. Regenerate without the wrong_angle tag, or reject the post.',
+            details,
+          );
+        try {
+          const again = await reselectStory(tx, opportunityId, {
+            reviewActionId: action.id,
+            now: now(ctx),
+          });
+          if (!again.selection?.angleId) {
+            throw noOther({ excludedAngles: again.excludedAngles, reason: again.reason });
+          }
+          newAngleId = again.selection.angleId;
+        } catch (err) {
+          if (err instanceof StoryNotReadyError) throw noOther({ reason: err.message });
+          throw err;
+        }
+      }
+
       let jobId: string | null = null;
       if (kind === 'regenerate') {
         const job = await tx.jobs.create({
@@ -803,6 +874,7 @@ export async function transitionOpportunity(
               opportunityId,
               newCycle: true,
               feedback: { actionId: action.id, text: feedback, tags },
+              ...(newAngleId && { angleId: newAngleId }),
             } as Prisma.InputJsonValue,
             idempotency_key: `regenerate:${action.id}`,
             not_after: opp.not_after,
@@ -823,10 +895,194 @@ export async function transitionOpportunity(
             tags,
             hasFeedback: Boolean(feedback),
             jobId,
+            newAngleId,
           },
         },
       });
-      return { actionId: action.id, opportunityId, status: rule.to, jobId, replayed: false };
+      return {
+        actionId: action.id,
+        opportunityId,
+        status: rule.to,
+        jobId,
+        newAngleId,
+        replayed: false,
+      };
+    },
+    { timeout: 20_000 },
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Ask the model to rewrite one candidate (module 1.12)
+// ---------------------------------------------------------------------------------------------------------
+
+/** States in which a candidate can be sent back to the model for a rewrite. */
+const REVISABLE = ['awaiting_review', 'deferred'];
+
+export interface ReviseRequestInput {
+  /** The revision the reviewer is looking at. Refused if the candidate has moved on. */
+  baseRevisionId: string;
+  feedback?: string;
+  feedbackTags?: string[];
+  idempotencyKey?: string;
+}
+
+export interface ReviseRequestResult {
+  actionId: string;
+  opportunityId: string;
+  candidateId: string;
+  baseRevisionId: string;
+  /** The job that will write the new revision. */
+  jobId: string | null;
+  replayed: boolean;
+}
+
+/**
+ * Records a reviewer's request to have one candidate rewritten from their feedback, and queues the job that
+ * does it. The opportunity stays where it is: the other candidates can still be approved or edited, and if
+ * this candidate is edited before the model answers, the answer is dropped as out of date.
+ */
+export async function requestRevision(
+  ctx: Pick<ActionContext, 'db' | 'now'>,
+  actor: ReviewActor,
+  candidateId: string,
+  input: ReviseRequestInput,
+): Promise<ReviseRequestResult> {
+  const tags = normaliseTags(input.feedbackTags);
+  const feedback = input.feedback?.trim() || null;
+  if (feedback && feedback.length > MAX_FEEDBACK) {
+    throw new ReviewError(
+      422,
+      'feedback_too_long',
+      `Feedback is limited to ${MAX_FEEDBACK} characters`,
+    );
+  }
+  if (tags.length > 10 || tags.some((t) => t.length > 40)) {
+    throw new ReviewError(422, 'bad_tags', 'Use at most 10 tags of up to 40 characters');
+  }
+  if (!feedback && tags.length === 0) {
+    throw new ReviewError(
+      422,
+      'feedback_required',
+      'Say what to change: add feedback or at least one tag',
+    );
+  }
+  const candidate = await ctx.db.post_candidates.findUnique({ where: { id: candidateId } });
+  if (!candidate) throw new ReviewError(404, 'not_found', 'Candidate not found');
+  const key = scopedKey(actor, input.idempotencyKey);
+
+  return ctx.db.$transaction(
+    async (tx) => {
+      const opp = await lockOpportunity(tx, candidate.opportunity_id);
+      if (key) {
+        const prior = await tx.review_actions.findUnique({ where: { idempotency_key: key } });
+        if (prior) {
+          if (prior.action !== 'revise' || prior.candidate_id !== candidateId) {
+            throw new ReviewError(
+              409,
+              'idempotency_conflict',
+              'That key was used for a different action',
+            );
+          }
+          return {
+            actionId: prior.id,
+            opportunityId: opp.id,
+            candidateId,
+            baseRevisionId: prior.revision_id!,
+            jobId: null,
+            replayed: true,
+          };
+        }
+      }
+      assertStatus(opp.status, REVISABLE, 'A rewrite');
+      const latestCycle = await tx.post_candidates.aggregate({
+        where: { opportunity_id: opp.id },
+        _max: { generation_cycle: true },
+      });
+      if (latestCycle._max.generation_cycle !== candidate.generation_cycle) {
+        throw new ReviewError(
+          409,
+          'candidate_superseded',
+          'This candidate was replaced by a regeneration',
+        );
+      }
+      const base = await tx.post_revisions.findFirst({
+        where: { candidate_id: candidateId },
+        orderBy: { revision_no: 'desc' },
+      });
+      if (!base) throw new ReviewError(404, 'not_found', 'Candidate has no revision');
+      if (base.id !== input.baseRevisionId) {
+        throw new ReviewError(
+          409,
+          'revision_superseded',
+          'This candidate has changed since you opened it',
+          { newestRevisionId: base.id },
+        );
+      }
+      const waiting = (await pendingRewrites(tx, opp.id)).find(
+        (p) => p.candidateId === candidateId,
+      );
+      if (waiting) {
+        throw new ReviewError(
+          409,
+          'revision_pending',
+          'A rewrite of this candidate is already on its way',
+          { jobId: waiting.jobId },
+        );
+      }
+
+      const action = await tx.review_actions.create({
+        data: {
+          opportunity_id: opp.id,
+          candidate_id: candidateId,
+          revision_id: base.id,
+          action: 'revise',
+          content_hash: base.content_hash,
+          reviewer_id: actor.userId,
+          feedback,
+          feedback_tags: tags,
+          idempotency_key: key ?? null,
+        },
+      });
+      const job = await tx.jobs.create({
+        data: {
+          lane: 'gpu',
+          kind: 'revision_from_feedback',
+          opportunity_id: opp.id,
+          payload: {
+            opportunityId: opp.id,
+            candidateId,
+            baseRevisionId: base.id,
+            actionId: action.id,
+          } as Prisma.InputJsonValue,
+          idempotency_key: `revise:${action.id}`,
+          not_after: opp.not_after,
+        },
+      });
+      await tx.audit_log.create({
+        data: {
+          actor: actor.userId,
+          action: 'review.revise',
+          target_type: 'revision',
+          target_id: base.id,
+          details: {
+            opportunityId: opp.id,
+            candidateId,
+            actionId: action.id,
+            tags,
+            hasFeedback: Boolean(feedback),
+            jobId: job.id,
+          },
+        },
+      });
+      return {
+        actionId: action.id,
+        opportunityId: opp.id,
+        candidateId,
+        baseRevisionId: base.id,
+        jobId: job.id,
+        replayed: false,
+      };
     },
     { timeout: 20_000 },
   );

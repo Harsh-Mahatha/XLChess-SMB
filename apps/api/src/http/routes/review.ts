@@ -8,9 +8,11 @@ import {
   QueueQuery,
   ReviewError,
   ReviewNotFoundError,
+  ReviseBody,
   approveRevision,
   editCandidate,
   opportunityDetail,
+  requestRevision,
   reviewQueue,
   transitionOpportunity,
   type ActionContext,
@@ -77,6 +79,22 @@ export function reviewRouter({ verifier, read, act }: ReviewRouteDeps): Router {
     try {
       const result = await editCandidate(act, { userId: actorOf(res).userId }, id, body);
       res.status(201).json(result);
+    } catch (err) {
+      translate(err);
+    }
+  });
+
+  // Ask the model to rewrite this candidate from the reviewer's feedback (module 1.12).
+  r.post('/v1/candidates/:id/revise', async (req, res) => {
+    const { id } = IdParam.parse(req.params);
+    const body = ReviseBody.parse(req.body);
+    const key = idempotencyKey(req);
+    try {
+      const result = await requestRevision(act, { userId: actorOf(res).userId }, id, {
+        ...body,
+        idempotencyKey: key,
+      });
+      res.status(result.replayed ? 200 : 202).json(result);
     } catch (err) {
       translate(err);
     }

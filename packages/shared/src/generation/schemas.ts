@@ -55,6 +55,37 @@ export const ChannelSpec = z
   .strict();
 export type ChannelSpec = z.infer<typeof ChannelSpec>;
 
+/** What a reviewer said about a post. It steers wording and emphasis; it is never a source of facts. */
+export const FeedbackNote = z
+  .object({
+    text: z.string().max(4000).nullable(),
+    tags: z.array(z.string().max(40)).max(10),
+  })
+  .strict();
+export type FeedbackNote = z.infer<typeof FeedbackNote>;
+
+/** The regeneration request a new set of candidates answers (module 1.12). */
+export const ReviewerFeedback = FeedbackNote.extend({
+  /** The review action that asked for the regeneration. */
+  actionId: z.string().optional(),
+  /** Earlier regeneration requests for the same opportunity, oldest first. */
+  earlier: z.array(FeedbackNote).max(5),
+  /** The posts the reviewer turned down. `target` marks the one the feedback was about. */
+  previousPosts: z
+    .array(
+      z
+        .object({
+          slot: z.string(),
+          headline: z.string(),
+          caption: z.string(),
+          target: z.boolean(),
+        })
+        .strict(),
+    )
+    .max(9),
+}).strict();
+export type ReviewerFeedback = z.infer<typeof ReviewerFeedback>;
+
 export const GenerationInput = z
   .object({
     schemaVersion: z.literal(GENERATION_SCHEMA_VERSION),
@@ -91,6 +122,8 @@ export const GenerationInput = z
     allowedTemplates: z.array(z.string()).min(1),
     /** Things the builder left out or flagged, for example a claim that looked like an instruction. */
     warnings: z.array(z.string()),
+    /** Present only when a reviewer asked for these candidates to be written again. */
+    reviewerFeedback: ReviewerFeedback.optional(),
   })
   .strict();
 export type GenerationInput = z.infer<typeof GenerationInput>;
@@ -195,6 +228,22 @@ export interface GeneratedCandidate {
   visualValidation: ValidationResult;
   /** Candidate-writing attempts used (2 means the first one failed validation). */
   attempts: number;
+}
+
+/** One candidate rewritten from a reviewer's feedback (module 1.12). */
+export interface RevisionResult {
+  schemaVersion: typeof GENERATION_SCHEMA_VERSION;
+  slot: Slot;
+  provider: string;
+  model: string;
+  /** `revise@semver#hash`. */
+  promptVersion: string;
+  settings: unknown;
+  draft: CandidateDraft;
+  validation: ValidationResult;
+  /** Attempts used (2 means the first rewrite failed validation). */
+  attempts: number;
+  durationMs: number;
 }
 
 export interface GenerationResult {

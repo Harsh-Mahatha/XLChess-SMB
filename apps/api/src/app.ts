@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 import type { Env } from './env.js';
 import { errorHandler, notFoundHandler } from './http/errors.js';
 import { buildOpenApiDocument } from './http/openapi.js';
+import { feedbackRouter } from './http/routes/feedback.js';
 import { healthRouter } from './http/routes/health.js';
 import { reviewRouter, type ReviewRouteDeps } from './http/routes/review.js';
 
@@ -32,7 +33,10 @@ export function createApp({ env, logger, review }: AppDeps): Express {
   app.get('/v1/openapi.json', (_req, res) => {
     res.json(buildOpenApiDocument(API_VERSION));
   });
-  if (review) app.use(reviewRouter(review));
+  if (review) {
+    app.use(reviewRouter(review));
+    app.use(feedbackRouter({ verifier: review.verifier, db: review.read.db }));
+  }
 
   app.use(notFoundHandler);
   app.use(errorHandler);

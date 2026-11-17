@@ -84,7 +84,10 @@ export async function loadHistory(
     },
     orderBy: { created_at: 'desc' },
   });
-  return rows.map((r) => ({
+  // An opportunity whose angle a reviewer turned down has several selections; only its newest one is its story.
+  const seen = new Set<string>();
+  const newest = rows.filter((r) => !seen.has(r.opportunity_id) && seen.add(r.opportunity_id));
+  return newest.map((r) => ({
     opportunityId: r.opportunity_id,
     angleId: r.angle_id ?? '',
     features: r.features as unknown as string[],
@@ -127,13 +130,9 @@ export async function selectStory(
       throw new StoryNotReadyError(opportunityId, 'no usable research package (missing or failed)');
     }
 
-    const existing = await tx.story_selections.findUnique({
-      where: {
-        opportunity_id_research_package_id: {
-          opportunity_id: opportunityId,
-          research_package_id: pkg.id,
-        },
-      },
+    const existing = await tx.story_selections.findFirst({
+      where: { opportunity_id: opportunityId, research_package_id: pkg.id },
+      orderBy: { created_at: 'desc' },
     });
     if (existing) return toStored(existing, false);
 
@@ -206,19 +205,110 @@ export async function selectStory(
   });
 }
 
+export interface Reselection {
+  /** Undefined when no other story is supported: nothing was stored and the earlier selection stands. */
+  selection?: StoredSelection;
+  previousAngleId: string;
+  excludedAngles: string[];
+  /** Why nothing else qualified, when `selection` is undefined. */
+  reason: string;
+}
+
+/**
+ * Picks a different story after a reviewer turned the angle down (module 1.12). Every angle already chosen for
+ * this opportunity is left out, and the rest are ranked again against the same research package. The new
+ * selection is stored next to the old one, tied to the review action that asked for it; generation then writes
+ * about the newest. Runs inside the caller's transaction, so a request that cannot be met leaves no trace.
+ */
+export async function reselectStory(
+  tx: Prisma.TransactionClient,
+  opportunityId: string,
+  options: { reviewActionId: string; now?: Date },
+): Promise<Reselection> {
+  const now = options.now ?? new Date();
+  const opp = await tx.post_opportunities.findUniqueOrThrow({ where: { id: opportunityId } });
+  await tx.$executeRaw`select pg_advisory_xact_lock(hashtext(${'smb.story:' + opp.post_type_id}))`;
+
+  const chosen = await tx.story_selections.findMany({
+    where: { opportunity_id: opportunityId, outcome: 'selected' },
+    orderBy: { created_at: 'desc' },
+  });
+  const current = chosen[0];
+  if (!current?.angle_id) {
+    throw new StoryNotReadyError(opportunityId, 'no story has been selected yet');
+  }
+  const excludedAngles = [...new Set(chosen.flatMap((c) => (c.angle_id ? [c.angle_id] : [])))];
+
+  const pkg = await tx.research_packages.findUniqueOrThrow({
+    where: { id: current.research_package_id },
+    include: { research_claims: true },
+  });
+  const row = await tx.post_configs.findUniqueOrThrow({ where: { id: opp.post_config_id } });
+  const config = PostTypeConfig.parse(row.config_json);
+  const effective = resolvePhase(config, opp.phase);
+  const claims: ClaimView[] = pkg.research_claims.map((c) => ({
+    claimKey: c.claim_key,
+    value: c.value,
+    verification: c.verification,
+    confidence: Number(c.confidence ?? 0),
+    eventTime: c.event_time?.toISOString(),
+  }));
+  const history = await loadHistory(
+    tx,
+    opp.post_type_id,
+    config.deduplication.windowDays,
+    now,
+    opportunityId,
+  );
+  const result = rankStories({
+    phase: opp.phase,
+    claims,
+    history,
+    channels: config.channels,
+    staleAfterMinutes: effective.staleAfterMinutes,
+    deduplication: config.deduplication,
+    storySelection: config.storySelection,
+    now,
+    excludedAngles,
+  });
+  const picked = result.selected;
+  if (!picked) {
+    return { previousAngleId: current.angle_id, excludedAngles, reason: result.reason };
+  }
+  const saved = await tx.story_selections.create({
+    data: {
+      opportunity_id: opportunityId,
+      research_package_id: pkg.id,
+      outcome: 'selected',
+      angle_id: picked.angleId,
+      fingerprint: picked.fingerprint,
+      features: picked.features as Prisma.InputJsonValue,
+      score: picked.score,
+      reason: `${result.reason} A reviewer turned down: ${excludedAngles.join(', ')}.`,
+      ranking: result.ranking as unknown as Prisma.InputJsonValue,
+      selector_version: SELECTOR_VERSION,
+      review_action_id: options.reviewActionId,
+      excluded_angles: excludedAngles,
+    },
+  });
+  return {
+    selection: toStored(saved, true),
+    previousAngleId: current.angle_id,
+    excludedAngles,
+    reason: result.reason,
+  };
+}
+
 /** The angle generation (module 1.7) must write about. Throws unless a story was selected for this package. */
 export async function selectedAngleFor(
   db: PrismaClient,
   opportunityId: string,
   packageId: string,
 ): Promise<{ angleId: string; reason: string; selectionId: string }> {
-  const row = await db.story_selections.findUnique({
-    where: {
-      opportunity_id_research_package_id: {
-        opportunity_id: opportunityId,
-        research_package_id: packageId,
-      },
-    },
+  // The newest selection counts: a reviewer who turned the angle down gets a later one (module 1.12).
+  const row = await db.story_selections.findFirst({
+    where: { opportunity_id: opportunityId, research_package_id: packageId },
+    orderBy: { created_at: 'desc' },
   });
   if (!row) {
     throw new StoryNotReadyError(opportunityId, 'no story has been selected for this package');

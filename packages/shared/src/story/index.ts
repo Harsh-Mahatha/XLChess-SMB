@@ -337,7 +337,8 @@ export type RejectionCode =
   | 'stale'
   | 'duplicate'
   | 'repetitive'
-  | 'below_minimum';
+  | 'below_minimum'
+  | 'reviewer_rejected';
 
 export interface Rejection {
   code: RejectionCode;

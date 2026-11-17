@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { ChannelsRegistry } from '@smb/shared';
 import type { ObjectStore } from '../storage/index.js';
 import { channelPreviews, type ChannelPreview } from './previews.js';
@@ -122,6 +122,14 @@ export interface RevisionSummary {
   authorKind: string;
   authorId: string | null;
   changeNote: string | null;
+  /** `factual`, `creative`, `mixed`, `binding` (approval added the graphic) or `ai_revision`; null when unlabelled. */
+  changeKind: string | null;
+  changedFields: string[];
+  changeTags: string[];
+  /** For a rewrite by the model: the request it answered. */
+  feedbackActionId: string | null;
+  /** For a rewrite by the model: whether it passed the automatic checks. */
+  passedChecks: boolean | null;
   contentHash: string;
   createdAt: string;
 }
@@ -155,6 +163,9 @@ export interface CandidateView {
     authorKind: string;
     authorId: string | null;
     changeNote: string | null;
+    changeKind: string | null;
+    /** The automatic checks of a rewrite by the model. Null for other revisions: see the candidate's `validation`. */
+    validation: unknown;
     createdAt: string;
     attachedAssetIds: string[];
   };
@@ -163,6 +174,8 @@ export interface CandidateView {
   graphics: GraphicView[];
   /** True when approving will attach a graphic. */
   willAttachGraphic: boolean;
+  /** True while a rewrite by the model has been asked for and has not arrived yet. */
+  revisionPending: boolean;
   previews: ChannelPreview[];
 }
 
@@ -284,6 +297,35 @@ async function photoCredits(db: PrismaClient, renderAssetId: string): Promise<Ph
   return credits;
 }
 
+/** Rewrites that were asked for and have not been stored yet. */
+export async function pendingRewrites(
+  db: PrismaClient | Prisma.TransactionClient,
+  opportunityId: string,
+): Promise<{ jobId: string; candidateId: string; actionId: string }[]> {
+  const jobs = await db.jobs.findMany({
+    where: {
+      kind: 'revision_from_feedback',
+      opportunity_id: opportunityId,
+      status: { in: ['queued', 'leased'] },
+    },
+    select: { id: true, payload: true },
+  });
+  const asked = jobs.flatMap((j) => {
+    const p = j.payload as { candidateId?: string; actionId?: string } | null;
+    return p?.candidateId && p.actionId
+      ? [{ jobId: j.id, candidateId: p.candidateId, actionId: p.actionId }]
+      : [];
+  });
+  if (asked.length === 0) return [];
+  // A rewrite made outside the queue (the command line) leaves its job behind; it is not pending.
+  const answered = await db.post_revisions.findMany({
+    where: { review_action_id: { in: asked.map((a) => a.actionId) } },
+    select: { review_action_id: true },
+  });
+  const done = new Set(answered.map((r) => r.review_action_id));
+  return asked.filter((a) => !done.has(a.actionId));
+}
+
 /** Everything a reviewer needs to decide on one opportunity, in one answer. */
 export async function opportunityDetail(
   ctx: ReviewContext,
@@ -320,6 +362,10 @@ export async function opportunityDetail(
   });
   const cycle = all[0]?.generation_cycle ?? null;
   const current = all.filter((c) => c.generation_cycle === cycle);
+
+  const beingRewritten = new Set(
+    (await pendingRewrites(db, opportunityId)).map((p) => p.candidateId),
+  );
 
   const candidates: CandidateView[] = [];
   for (const c of current) {
@@ -379,6 +425,8 @@ export async function opportunityDetail(
         authorKind: latest.author_kind,
         authorId: latest.author_id,
         changeNote: latest.change_note,
+        changeKind: latest.change_kind,
+        validation: latest.validation,
         createdAt: latest.created_at.toISOString(),
         attachedAssetIds: attached,
       },
@@ -388,6 +436,14 @@ export async function opportunityDetail(
         authorKind: r.author_kind,
         authorId: r.author_id,
         changeNote: r.change_note,
+        changeKind: r.change_kind,
+        changedFields: r.changed_fields,
+        changeTags: r.change_tags,
+        feedbackActionId: r.review_action_id,
+        passedChecks:
+          r.validation === null
+            ? null
+            : Boolean((r.validation as { passed?: boolean } | null)?.passed),
         contentHash: r.content_hash,
         createdAt: r.created_at.toISOString(),
       })),
@@ -405,6 +461,7 @@ export async function opportunityDetail(
       })),
       graphics,
       willAttachGraphic: willAttach,
+      revisionPending: beingRewritten.has(c.id),
       previews: channelPreviews(ctx.channels, {
         caption: latest.caption,
         channelTexts: (latest.channel_texts ?? {}) as Record<string, unknown>,

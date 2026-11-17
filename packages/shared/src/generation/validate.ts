@@ -371,6 +371,21 @@ export function validateCandidate(
       );
     }
   }
+  // A regeneration that hands back a post the reviewer already turned down has not answered them.
+  for (const prev of input.reviewerFeedback?.previousPosts ?? []) {
+    const sim = captionSimilarity(draft.caption, prev.caption);
+    if (sim >= MAX_CAPTION_SIMILARITY) {
+      issues.push(
+        issue(
+          'repeats_rejected',
+          'warn',
+          'caption',
+          `${Math.round(sim * 100)}% the same as post ${prev.slot}, which the reviewer turned down`,
+        ),
+      );
+      break;
+    }
+  }
   return result(issues);
 }
 

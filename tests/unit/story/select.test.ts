@@ -310,3 +310,22 @@ describe('rankStories: avoiding repetition', () => {
     expect(rel(fallback)).toBe(0.5);
   });
 });
+
+describe('rankStories: a reviewer turned the angle down (module 1.12)', () => {
+  it('never picks that angle again for the opportunity, and says why', () => {
+    const first = rankStories(input());
+    const turnedDown = first.selected!.angleId;
+    const again = rankStories(input({ excludedAngles: [turnedDown] }));
+    expect(rejection(again, turnedDown)).toEqual(['reviewer_rejected']);
+    expect(again.selected?.angleId).not.toBe(turnedDown);
+  });
+
+  it('reports no worthwhile post when every supported angle was turned down', () => {
+    const eligible = rankStories(input())
+      .ranking.filter((r) => r.eligible)
+      .map((r) => r.angleId);
+    const res = rankStories(input({ excludedAngles: eligible }));
+    expect(res.outcome).toBe('no_worthwhile_post');
+    expect(res.reason).toContain('reviewer_rejected');
+  });
+});

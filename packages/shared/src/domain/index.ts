@@ -45,6 +45,7 @@ export const ReviewActionType = z.enum([
   'regenerate',
   'request_research',
   'comment',
+  'revise',
 ]);
 export type ReviewActionType = z.infer<typeof ReviewActionType>;
 
