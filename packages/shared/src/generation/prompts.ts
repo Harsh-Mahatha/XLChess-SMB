@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import type { z } from 'zod';
 import type { AiMessage, AiSettings, AiTask } from '../ai/provider.js';
-import { dataBlock } from './brief.js';
+import { dataBlock, feedbackBlock } from './brief.js';
 import {
   APPROACHES,
   CandidateDraft,
   EditorialReview,
   KeyPoints,
   VisualPlan,
+  type FeedbackNote,
   type GenerationInput,
   type Slot,
   type ValidationIssue,
@@ -51,9 +52,13 @@ export const INTERPRET: PromptSpec = {
   settings: { temperature: 0.2, seed: 7 },
 };
 
+/** How a model must treat a reviewer's feedback. Shared by the candidate and revise prompts. */
+const FEEDBACK_RULE =
+  'A <reviewer_feedback> block, when present, comes from our own editor: follow it for wording, tone, emphasis, length and structure. It is never a source of facts: use no figure, name, result or claim from it that is not in the facts.';
+
 export const CANDIDATE: PromptSpec = {
   id: 'candidate',
-  semver: '1.0.0',
+  semver: '1.1.0',
   system: `You write social media posts for a chess community. Tone: natural and engaging, never promotional. ${SAFETY}`,
   instructions: [
     'Write one post in the requested approach.',
@@ -63,6 +68,8 @@ export const CANDIDATE: PromptSpec = {
     'Say plainly what is confirmed. If you mention what might happen next, mark it as a possibility, not a fact.',
     'Do not quote anyone, do not call anything official or announced, and do not mention ratings unless a fact provides them.',
     'Make the post clearly different from the other posts listed, in structure and wording.',
+    FEEDBACK_RULE,
+    'If posts the editor turned down are listed, do not repeat their headline, opening or structure.',
   ].join(' '),
   settings: { temperature: 0.7, seed: 11 },
 };
@@ -83,6 +90,24 @@ export const VISUAL: PromptSpec = {
   instructions:
     'Choose one template from the allowed list, give short composition notes that follow the image rules, and write alt text that describes the graphic using only facts from the post.',
   settings: { temperature: 0.3, seed: 17 },
+};
+
+/** Stage 6 of the guide: one candidate rewritten from a reviewer's feedback (module 1.12). */
+export const REVISE: PromptSpec = {
+  id: 'revise',
+  semver: '1.0.0',
+  system: `You revise a social media post for a chess community after an editor has commented on it. Tone: natural and engaging, never promotional. ${SAFETY}`,
+  instructions: [
+    'Rewrite the current post so that it answers the editor.',
+    FEEDBACK_RULE,
+    'Change what the feedback asks for and keep the rest of the post as it is.',
+    'Keep the requested approach. Write a headline, a caption, and a text for every listed channel that fits its character limit.',
+    'Cite in claimKeys every fact the text uses, and use no fact you do not cite.',
+    'Write figures, names and results exactly as the facts give them. Never calculate a new figure.',
+    'Do not quote anyone, do not call anything official or announced, and do not mention ratings unless a fact provides them.',
+    'Keep the post clearly different from the other posts listed.',
+  ].join(' '),
+  settings: { temperature: 0.5, seed: 19 },
 };
 
 export const PROMPTS = {
@@ -119,7 +144,7 @@ const factsForPrompt = (input: GenerationInput) =>
   }));
 
 const task = <T>(
-  name: StageName,
+  name: StageName | 'revise',
   spec: PromptSpec,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   msgs: AiMessage[],
@@ -181,6 +206,26 @@ export function candidateTask(c: CandidateInput, settings?: AiSettings): AiTask<
   if (c.others.length > 0) {
     parts.push(dataBlock('other_posts_to_differ_from', c.others));
   }
+  const asked = input.reviewerFeedback;
+  if (asked) {
+    parts.push(
+      'The editor turned down the earlier posts and asked for new ones.',
+      feedbackBlock([...asked.earlier, { text: asked.text, tags: asked.tags }]),
+    );
+    if (asked.previousPosts.length > 0) {
+      parts.push(
+        dataBlock(
+          'posts_the_editor_turned_down',
+          asked.previousPosts.map((p) => ({
+            slot: p.slot,
+            headline: p.headline,
+            caption: p.caption,
+            ...(p.target && { theFeedbackIsAboutThisOne: true }),
+          })),
+        ),
+      );
+    }
+  }
   if (c.feedback.length > 0) {
     parts.push(
       `Your previous attempt was rejected. Fix these problems:\n${c.feedback
@@ -190,6 +235,45 @@ export function candidateTask(c: CandidateInput, settings?: AiSettings): AiTask<
     );
   }
   return task('candidate', CANDIDATE, CandidateDraft, messages(CANDIDATE, parts), c, settings);
+}
+
+export interface ReviseInput {
+  input: GenerationInput;
+  slot: Slot;
+  /** The post as it stands. */
+  current: CandidateDraft;
+  /** What the reviewer asked for. */
+  request: FeedbackNote;
+  /** The other candidates, which the rewrite must stay different from. */
+  others: { slot: Slot; headline: string; caption: string }[];
+  /** Problems found in the previous attempt at this rewrite, to fix. */
+  feedback: ValidationIssue[];
+}
+export function reviseTask(r: ReviseInput, settings?: AiSettings): AiTask<CandidateDraft> {
+  const { input } = r;
+  const approach = APPROACHES[r.slot];
+  const parts = [
+    `Approach of this post (${approach.id}): ${approach.instruction}`,
+    `Angle: ${input.angle.id} - ${input.angle.description}`,
+    `Tone: ${input.contentRules.tone}`,
+    `Rules: ${input.contentRules.restrictions.join(' | ') || 'none'}`,
+    `Channels and character limits: ${input.channels.map((ch) => `${ch.id} ${ch.maxTextLength}`).join(', ')}`,
+    dataBlock('facts', factsForPrompt(input)),
+    dataBlock('current_post', r.current),
+    feedbackBlock([r.request]),
+  ];
+  if (r.others.length > 0) {
+    parts.push(dataBlock('other_posts_to_differ_from', r.others));
+  }
+  if (r.feedback.length > 0) {
+    parts.push(
+      `Your previous rewrite was rejected. Fix these problems:\n${r.feedback
+        .filter((f) => f.severity === 'error')
+        .map((f) => `- ${f.field}: ${f.message}`)
+        .join('\n')}`,
+    );
+  }
+  return task('revise', REVISE, CandidateDraft, messages(REVISE, parts), r, settings);
 }
 
 export interface EditorialInput {

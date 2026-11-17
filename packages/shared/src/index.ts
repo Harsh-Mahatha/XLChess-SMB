@@ -10,3 +10,4 @@ export * from './generation/index.js';
 export * from './worker/index.js';
 export * from './images/index.js';
 export * from './graphics/index.js';
+export * from './feedback/index.js';

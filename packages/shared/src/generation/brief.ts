@@ -221,3 +221,17 @@ export function dataBlock(label: string, data: unknown): string {
   const json = JSON.stringify(data, null, 2).replace(/</g, '\\u003c');
   return `<data label="${label}">\n${json}\n</data>`;
 }
+
+/**
+ * Renders a reviewer's feedback for a prompt. Unlike a data block it is an instruction, from our own editor,
+ * so it has its own tag; `<` is escaped the same way so the text cannot close the block or open another.
+ */
+export function feedbackBlock(notes: { text: string | null; tags: string[] }[]): string {
+  const lines = notes
+    .filter((n) => n.text || n.tags.length > 0)
+    .map((n) => {
+      const tags = n.tags.length > 0 ? `[${n.tags.join(', ')}] ` : '';
+      return `- ${tags}${n.text ?? ''}`.trimEnd().replace(/</g, '\\u003c');
+    });
+  return `<reviewer_feedback>\n${lines.join('\n')}\n</reviewer_feedback>`;
+}

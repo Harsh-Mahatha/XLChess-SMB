@@ -1,6 +1,7 @@
 import type {
   CandidateInput,
   InterpretInput,
+  ReviseInput,
   VisualInput,
 } from '../generation/prompts.js';
 import type {
@@ -93,6 +94,17 @@ function candidate(task: AiTask<unknown>): CandidateDraft {
   };
 }
 
+/** Keeps the post's facts and marks it as rewritten, so a run without a model still shows the whole path. */
+function revise(task: AiTask<unknown>): CandidateDraft {
+  const { input, current, request } = task.input as ReviseInput;
+  const first = current.caption.split(/(?<=\.)\s+/)[0] ?? current.caption;
+  const shorter = request.tags.includes('too_long') && first !== current.caption;
+  const caption = shorter ? first : `Updated: ${current.caption}`;
+  const channelTexts: Record<string, string> = {};
+  for (const ch of input.channels) channelTexts[ch.id] = fit(caption, ch.maxTextLength);
+  return { ...current, caption, channelTexts };
+}
+
 function editorial(): EditorialReview {
   return { verdict: 'pass', issues: [] };
 }
@@ -111,6 +123,7 @@ const DEFAULTS: Record<string, StubHandler> = {
   candidate,
   editorial: () => editorial(),
   visual,
+  revise,
 };
 
 /**

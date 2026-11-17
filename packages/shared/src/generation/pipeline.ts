@@ -1,9 +1,12 @@
 import { AiError, type AiProvider, type AiResult, type AiSettings } from '../ai/provider.js';
 import {
+  REVISE,
   candidateTask,
   editorialTask,
   interpretTask,
+  promptVersion,
   promptVersions,
+  reviseTask,
   visualTask,
   type StageName,
 } from './prompts.js';
@@ -15,9 +18,11 @@ import {
   KeyPoints,
   SLOTS,
   VisualPlan,
+  type FeedbackNote,
   type GeneratedCandidate,
   type GenerationInput,
   type GenerationResult,
+  type RevisionResult,
   type Slot,
   type ValidationIssue,
   type ValidationResult,
@@ -198,4 +203,107 @@ export function recheckGeneration(
     };
   });
   return { ...result, interpretation, candidates };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Revision from reviewer feedback (module 1.12)
+// ---------------------------------------------------------------------------------------------
+
+export interface RevisionRequest {
+  slot: Slot;
+  /** The post as it stands. */
+  current: CandidateDraft;
+  /** What the reviewer asked for. */
+  request: FeedbackNote;
+  /** The other candidates of the same cycle, as they stand. */
+  others: OtherCandidate[];
+}
+
+export interface RevisionOptions {
+  settings?: AiSettings;
+  /** Rewrite attempts, including the first. Default 2. */
+  maxAttempts?: number;
+  now?: () => number;
+}
+
+/**
+ * Rewrites one candidate from a reviewer's feedback. The rewrite goes through the same deterministic checks
+ * as a new candidate, and a failing one is tried once more with the problems fed back. A rewrite that still
+ * fails is returned flagged, never silently passed.
+ */
+export async function runRevision(
+  provider: AiProvider,
+  input: GenerationInput,
+  request: RevisionRequest,
+  options: RevisionOptions = {},
+): Promise<RevisionResult> {
+  const now = options.now ?? Date.now;
+  const started = now();
+  const maxAttempts = Math.max(1, options.maxAttempts ?? 2);
+  let feedback: ValidationIssue[] = [];
+  let kept:
+    | { draft: CandidateDraft; validation: ValidationResult; attempts: number; settings: unknown }
+    | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let written: AiResult<CandidateDraft>;
+    try {
+      written = await provider.generate(
+        reviseTask(
+          {
+            input,
+            slot: request.slot,
+            current: request.current,
+            request: request.request,
+            others: request.others.map((o) => ({
+              slot: o.slot,
+              headline: o.draft.headline,
+              caption: o.draft.caption,
+            })),
+            feedback,
+          },
+          options.settings,
+        ),
+      );
+    } catch (err) {
+      if (err instanceof AiError && err.code === 'invalid_output' && attempt < maxAttempts) {
+        feedback = [
+          { code: 'invalid_output', severity: 'error', field: 'output', message: err.message },
+        ];
+        continue;
+      }
+      throw err;
+    }
+    const validation = validateCandidate(written.output, input, request.others);
+    kept = { draft: written.output, validation, attempts: attempt, settings: written.settings };
+    if (validation.passed) break;
+    feedback = validation.issues;
+  }
+  if (!kept) throw new AiError('invalid_output', 'revision: no usable output', false);
+
+  return {
+    schemaVersion: GENERATION_SCHEMA_VERSION,
+    slot: request.slot,
+    provider: provider.name,
+    model: provider.model,
+    promptVersion: promptVersion(REVISE),
+    settings: kept.settings,
+    draft: kept.draft,
+    validation: kept.validation,
+    attempts: kept.attempts,
+    durationMs: now() - started,
+  };
+}
+
+/** The server's check of a rewrite it did not produce itself: re-parse it and run every check again. */
+export function recheckRevision(
+  result: RevisionResult,
+  input: GenerationInput,
+  others: OtherCandidate[],
+): RevisionResult {
+  if (result.schemaVersion !== GENERATION_SCHEMA_VERSION) {
+    throw new Error(`unsupported revision result version ${String(result.schemaVersion)}`);
+  }
+  const draft = CandidateDraft.parse(result.draft);
+  return { ...result, draft, validation: validateCandidate(draft, input, others) };
 }
