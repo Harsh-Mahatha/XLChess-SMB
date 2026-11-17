@@ -134,11 +134,12 @@ interface ImageSource {
 // renderGraphic(deps, { template, aspect, data, candidateId? }) -> RenderResult   (apps/api/src/graphics/render.ts)
 
 // Publishing adapters (1.13, 1.23)
-interface PublishingAdapter {
-  channel: 'x' | 'facebook' | 'instagram' | 'discord';
-  validate(pkg: ApprovedPackage): ChannelCheck;          // length, media, alt text
-  publish(pkg: ApprovedPackage, idemKey: string): Promise<PublishResult>;
-  lookup(idemKey: string): Promise<PublishResult | null>; // safe recovery after a timeout
+interface SocialPublisher {
+  readonly channel: Channel;
+  validate(post: ApprovedPost): ValidationResult;
+  publish(post: ApprovedPost, signal?: AbortSignal): Promise<PublishResult>;
+  lookup(post: ApprovedPost, since: Date): Promise<LookupResult>;
+  getStatus(externalId: string): Promise<'live' | 'deleted' | 'unknown'>;
 }
 ```
 
