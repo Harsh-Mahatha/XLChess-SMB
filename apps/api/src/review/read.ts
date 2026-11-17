@@ -224,6 +224,9 @@ export interface OpportunityDetail {
     url: string | null;
     publishedAt: string | null;
     lastError: string | null;
+    externalId: string | null;
+    attemptCount: number;
+    needsAttention: boolean;
   }[];
 }
 
@@ -522,6 +525,9 @@ export async function opportunityDetail(
       url: p.url,
       publishedAt: p.published_at?.toISOString() ?? null,
       lastError: p.last_error,
+      externalId: p.external_id,
+      attemptCount: p.attempt_count,
+      needsAttention: (p.status === 'uncertain' && p.retry_after === null) || p.status === 'failed',
     })),
   };
 }

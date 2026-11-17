@@ -132,7 +132,7 @@ export async function checkVersionUnchanged(
     headline: rev.headline ?? '',
     caption: rev.caption,
     channelTexts: stringMap(rev.channel_texts),
-    template: rev.template_version,
+    template: rev.template_version ?? '',
     assetHashes: graphicAssets.map((g) => g.sha256).sort(),
   });
 
@@ -340,8 +340,8 @@ export async function checkDuplicateSafeguards(
     where: { post_type_id: post.postTypeId, is_active: true },
   });
 
-  const configJson = (activeConfig?.config_json as Record<string, any>) ?? {};
-  const dedupe = configJson.deduplication ?? {};
+  const configJson = (activeConfig?.config_json as Record<string, unknown>) ?? {};
+  const dedupe = (configJson.deduplication as Record<string, unknown> | undefined) ?? {};
   const windowDays = typeof dedupe.windowDays === 'number' ? dedupe.windowDays : 30;
   const similarityThreshold =
     typeof dedupe.similarityThreshold === 'number' ? dedupe.similarityThreshold : 0.85;

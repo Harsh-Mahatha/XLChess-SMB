@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type {
   Channel,
@@ -9,7 +10,6 @@ import type { ChannelsRegistry } from '@smb/shared';
 import type { Logger } from 'pino';
 import type { ObjectStore } from '../storage/index.js';
 import type { Env } from '../env.js';
-import type { XPublisher } from './x/adapter.js';
 import { PublisherDeps, publisherFor } from './registry.js';
 import { loadApprovedPost } from './package.js';
 import { preflight } from './preflight.js';
@@ -356,7 +356,7 @@ export async function publishPublication(
       publicationChannel = row.channel as Channel;
 
       if (row.status !== 'pending') {
-        return { skipped: row.status as const };
+        return { skipped: row.status as PublicationStatus };
       }
 
       const loadedPost = await loadApprovedPost(
@@ -408,7 +408,7 @@ export async function publishPublication(
               channel: loadedPost.channel,
               text: loadedPost.text,
             },
-            response_summary: { problems: pf.problems },
+            response_summary: { problems: pf.problems as unknown as Prisma.InputJsonValue },
             job_id: deps.jobId ?? null,
             started_at: at,
             finished_at: at,
@@ -429,7 +429,11 @@ export async function publishPublication(
         });
 
         await settleOpportunity(tx, loadedPost.opportunityId, at, deps.jobId);
-        return { refused: true as const, status: nextStatus, error: problemSummary };
+        return {
+          refused: true as const,
+          status: nextStatus as PublicationStatus,
+          error: problemSummary,
+        };
       }
 
       // Mark claimed and transition to publishing
@@ -464,7 +468,9 @@ export async function publishPublication(
     return {
       publicationId,
       status:
-        claimResult.skipped === 'locked' ? 'pending' : (claimResult.skipped as PublicationStatus),
+        (claimResult.skipped === 'locked'
+          ? 'pending'
+          : (claimResult.skipped as PublicationStatus)) ?? 'pending',
       skipped: claimResult.skipped,
       mode: publishMode,
       channel: publicationChannel,
@@ -474,7 +480,7 @@ export async function publishPublication(
   if ('refused' in claimResult) {
     return {
       publicationId,
-      status: claimResult.status,
+      status: claimResult.status ?? 'failed',
       outcome: 'refused',
       error: claimResult.error,
       mode: publishMode,
@@ -503,7 +509,7 @@ export async function publishPublication(
   return deps.db.$transaction(
     async (tx) => {
       // Lock row
-      const pubRow = await tx.publications.findUniqueOrThrow({
+      await tx.publications.findUniqueOrThrow({
         where: { id: publicationId },
       });
 
@@ -712,7 +718,7 @@ export async function reconcilePublication(
         return { skipped: 'in_flight' as const };
       }
     } else if (row.status !== 'uncertain') {
-      return { skipped: row.status as const };
+      return { skipped: row.status as PublicationStatus };
     }
 
     if (row.retry_after && row.retry_after > at) {

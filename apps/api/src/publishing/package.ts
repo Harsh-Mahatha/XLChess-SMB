@@ -86,8 +86,16 @@ export async function loadApprovedPost(
   for (const asset of graphicAssets) {
     let bytes: Uint8Array;
     try {
-      bytes = await deps.store.get(asset.bucket, asset.path);
+      const maybeBytes = await deps.store.get(asset.bucket, asset.path);
+      if (!maybeBytes) {
+        throw new PreflightError(
+          'media_missing',
+          `Failed reading media asset ${asset.id} from storage: file not found`,
+        );
+      }
+      bytes = maybeBytes;
     } catch (err: unknown) {
+      if (err instanceof PreflightError) throw err;
       const error = err as Error;
       throw new PreflightError(
         'media_read_error',
