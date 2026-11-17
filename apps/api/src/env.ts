@@ -16,6 +16,8 @@ const EnvSchema = z.object({
   XLCHESS_JWT_ISSUER: z.string().optional(),
   XLCHESS_JWT_AUDIENCE: z.string().optional(),
   XLCHESS_JWT_USER_ID_CLAIM: z.string().default('sub'),
+  /** How long an image link given to a reviewer works. */
+  SMB_SIGNED_URL_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
   SMB_PUBLISH_MODE: z.enum(['dry_run', 'sandbox', 'live']).default('dry_run'),
   SMB_ALLOW_LIVE_PUBLISH: bool.default('false'),
   SMB_AI_PROVIDER: z.enum(['stub', 'worker']).default('stub'),

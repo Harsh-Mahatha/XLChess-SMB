@@ -31,6 +31,8 @@ export interface RenderRequest {
   data: RenderDataInput;
   /** When set, the render is recorded against this candidate. */
   candidateId?: string;
+  /** The revision whose text the graphic shows. Approval (1.11) refuses a graphic made for a different headline. */
+  revisionId?: string;
   opportunityId?: string;
   jobId?: string;
 }
@@ -374,6 +376,7 @@ export async function renderGraphic(deps: RenderDeps, req: RenderRequest): Promi
         template_version: templateVersion,
         aspect: req.aspect,
         render_key: key,
+        revision_id: req.revisionId,
       },
       update: {},
     });

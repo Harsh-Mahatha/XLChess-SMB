@@ -5,12 +5,15 @@ import type { Env } from './env.js';
 import { errorHandler, notFoundHandler } from './http/errors.js';
 import { buildOpenApiDocument } from './http/openapi.js';
 import { healthRouter } from './http/routes/health.js';
+import { reviewRouter, type ReviewRouteDeps } from './http/routes/review.js';
 
 export const API_VERSION = '0.1.0';
 
 export interface AppDeps {
   env: Env;
   logger: Logger;
+  /** The reviewer API. Left out in tests and tools that only need the health route. */
+  review?: ReviewRouteDeps;
 }
 
 /**
@@ -19,7 +22,7 @@ export interface AppDeps {
  *   /v1/*        XLChess JWT   (review, admin)
  *   /worker/v1/* device token  (home-PC worker)
  */
-export function createApp({ env, logger }: AppDeps): Express {
+export function createApp({ env, logger, review }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(pinoHttp({ logger }));
@@ -29,6 +32,7 @@ export function createApp({ env, logger }: AppDeps): Express {
   app.get('/v1/openapi.json', (_req, res) => {
     res.json(buildOpenApiDocument(API_VERSION));
   });
+  if (review) app.use(reviewRouter(review));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

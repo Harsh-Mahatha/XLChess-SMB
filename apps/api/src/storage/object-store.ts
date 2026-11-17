@@ -9,6 +9,11 @@ export interface ObjectStore {
   get(bucket: string, path: string): Promise<Uint8Array | undefined>;
   /** Removes the object (retention). Returns false when there was nothing to remove; never fails for that. */
   remove(bucket: string, path: string): Promise<boolean>;
+  /**
+   * A link that lets a browser fetch one stored object for a short time without any credentials. Buckets stay
+   * private; only links made here (for reviewers who have passed the API's checks) work.
+   */
+  signedUrl(bucket: string, path: string, expiresInSeconds: number): Promise<string>;
 }
 
 export class StorageError extends Error {
@@ -40,6 +45,10 @@ export class InMemoryObjectStore implements ObjectStore {
 
   async remove(bucket: string, path: string): Promise<boolean> {
     return this.objects.delete(this.key(bucket, path));
+  }
+
+  async signedUrl(bucket: string, path: string, expiresInSeconds: number): Promise<string> {
+    return `memory://${bucket}/${path}?expires=${expiresInSeconds}`;
   }
 }
 
@@ -104,5 +113,21 @@ export class SupabaseObjectStore implements ObjectStore {
     // Storage answers 400/404 "not found" for an object that is already gone.
     if (res.status === 404 || res.status === 400) return false;
     throw new StorageError(`removing ${bucket}/${path} failed (HTTP ${res.status})`);
+  }
+
+  async signedUrl(bucket: string, path: string, expiresInSeconds: number): Promise<string> {
+    const res = await this.doFetch(`${this.base}/object/sign/${bucket}/${encodePath(path)}`, {
+      method: 'POST',
+      headers: this.headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ expiresIn: expiresInSeconds }),
+    });
+    if (!res.ok) throw new StorageError(`signing ${bucket}/${path} failed (HTTP ${res.status})`);
+    const body = (await res.json()) as { signedURL?: string };
+    if (!body.signedURL) throw new StorageError(`signing ${bucket}/${path} returned no link`);
+    // Storage answers with a path under /storage/v1 (older versions leave that part out).
+    const rel = body.signedURL.startsWith('/storage/v1')
+      ? body.signedURL.slice('/storage/v1'.length)
+      : body.signedURL;
+    return `${this.base}${rel}`;
   }
 }

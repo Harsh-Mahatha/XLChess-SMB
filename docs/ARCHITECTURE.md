@@ -249,7 +249,7 @@ Errors use one shape: `{ error: { code, message, details? } }`. Mutating reviewe
 
 ## 8. Security model (detailed in 1.18)
 
-- **User auth**: verify the XLChess JWT. Algorithm and key (HS256 secret or RS256 JWKS URL), issuer and audience all come from env. SMB keeps `smb.user_roles (xlchess_user_id, role)` with the roles `viewer`, `reviewer`, `admin`.
+- **User auth**: verify the XLChess JWT. Algorithm and key (HS256 secret or RS256 JWKS URL), issuer and audience all come from env. *Decided in 1.11 (2026-11-16):* XLChess signs its users in with a session cookie, not a JWT, so the **XLChess backend proxies** reviewer calls and mints a token of at most five minutes for each one (`sub` = the XLChess user id, `smb_role` = `reviewer` for its MANAGER and `admin` for its ADMIN). Roles therefore come from XLChess; SMB keeps no role table for the reviewer routes, so `smb.user_roles` is not needed for them.
 - **Worker auth**: device tokens, as described in §6. A worker token cannot reach `/v1/*`.
 - **Social credentials** stay in the API host's secret env only. They are used only by `publishing/`, never sent to the worker, and never returned by any endpoint. Logger redaction is enforced by a test.
 - **Publish mode**: `dry_run` (the default; records what *would* be posted), `sandbox`, `live`. Setting `live` needs **both** `SMB_ALLOW_LIVE_PUBLISH=true` in env **and** an admin toggle, which is audited.
@@ -393,7 +393,7 @@ Add `config/post-types/<id>-<name>.json` and run `npm run config:validate`. No c
 
 ## 12. Open items (need answers, none block scaffolding)
 
-1. **XLChess JWT details**: signing algorithm and key/JWKS, issuer, audience, and the user-id claim. Do roles come from token claims or from SMB's own role table?
+1. **XLChess JWT details**: signing algorithm and key/JWKS, issuer and audience. *(Roles and the user-id claim were settled in 1.11: roles are the `smb_role` claim, the user id is `sub`. XLChess still has to choose the algorithm and key and give SMB the issuer and audience.)*
 2. **Host**: which host and OS run the XLChess backend? (Playwright/Chromium is no longer needed since 1.10.) Is there a public HTTPS URL the worker can reach?
 3. **Who builds the worker and installer?** It isn't in any module's scope. This plan puts it in Phase 3.
 4. **X API tier**: posting with media needs a paid X API tier. Per the guide, paid services must be approved before implementation.
@@ -647,3 +647,33 @@ Code: manifest schema in `packages/shared/src/graphics/`; renderer, registry and
 **World Championship trial.** `game-result` follows the Nakamura-Liang artwork (split charcoal and navy background, gold and white names, framed photographs, gold VS, flags and ratings, headline strip). The integration tests rebuild it with Gukesh and Sindarov sample data and two photographs of different shapes, and prove the photograph areas, the licence chain, retouch detection and retention. Placeholder ratings are for layout only: real ratings come from a verified research claim at generation time.
 
 **Not in 1.10.** Attaching a render to an approved revision and its hash (1.11), the publish-time checks (1.13), the render job and its retries (1.17), a federation claim in the research package (flags need an ISO code; the renderer takes `flags` from the caller), AI decorative backgrounds inside templates (assets exist via `registerGeneratedAsset`, no template slot uses them yet), and a vision check that a photograph shows the named person.
+
+## Reviewer interface and approval (module 1.11)
+
+Code: `apps/api/src/auth/` (token check and role guard), `apps/api/src/review/` (read model, channel previews, approve, edit, other actions), `apps/api/src/http/routes/review.ts` (routes), migration `20261103001700`. The review screens themselves are in XLChess; this is the API and the approval rules behind them. The OpenAPI document at `GET /v1/openapi.json` lists every route.
+
+**Calling it.** Every `/v1` reviewer route needs `Authorization: Bearer <token>`. XLChess mints the token per call (see section 8): signed with the configured key, issuer and audience as configured, `sub` = user id, `smb_role` = `reviewer` or `admin`, `iat` and `exp` present, **issued no more than five minutes ago**. A worker's opaque device token is not a valid token, so a worker cannot reach `/v1`. When the token settings are missing the routes answer 503, never "open". Both roles may review; `admin` is for the later administrator routes (1.17, 1.18). Mutating routes take an optional `Idempotency-Key` header (8 to 100 visible characters); the key is stored with the reviewer's id, so two people cannot collide.
+
+| Route | Does |
+|---|---|
+| `GET /v1/review/queue?status=awaiting_review` or `deferred` | Opportunities waiting, most urgent first, with the first headline and how many candidates passed their checks |
+| `GET /v1/opportunities/:id` | One answer with everything: three candidates (newest revision, revision list, claims with verification and source links, validation result), each candidate's newest graphic per shape (a signed image link, template and version, hash, whether it is stale) and each photograph's credit and licence, a preview for every channel (text, length against limit, image, alt text, `problems`), the approval in force, review history, status history and publications |
+| `POST /v1/candidates/:id/revisions` | Edit: a new immutable revision (`baseRevisionId`, then any of `headline`, `caption`, `channelTexts`, `altText`, `changeNote`) |
+| `POST /v1/revisions/:id/approve` | Approve (`contentHash`, `channels`, optional `scheduledFor`, optional `acknowledgeFailedChecks`) |
+| `POST /v1/opportunities/:id/{reject,defer,regenerate,request-research,reopen}` | The other actions. The first four need `feedback` or `feedbackTags` |
+
+**What approval does.** All of it succeeds or none of it does.
+1. The hash sent must equal the revision's hash (`stale_hash`), the revision must be the candidate's newest (`revision_superseded`), the candidate must be in the newest generation cycle (`candidate_superseded`), and the opportunity must be `awaiting_review` and not past `not_after`.
+2. Channels must exist and be enabled in `config/channels.json` (V1: X only), and the text must meet each approved channel's rules (length with X's link rule, an image where required, alt text). The schedule must be in the future and before `not_after`.
+3. A candidate that failed its automatic checks and has not been edited by a person needs `acknowledgeFailedChecks`; the acknowledgement is audited.
+4. The graphic: if the revision has none, the candidate's newest graphic that was made for the **same headline** is used (`graphic_stale` if only older-headline graphics exist). Its licence is checked (`assertAssetsLicensed`, which covers every photograph) and its files are re-verified against Storage right now (`ensureAssetsIntact`); a failure is `asset_not_cleared`.
+5. **Binding (the 1.10 handoff).** A new revision is created carrying the graphic as `revision_assets` role `graphic`, its `template_version`, the same text and claims; its `content_hash` is `revisionHash` over the text, the render's `sha256` and the template version. The `approve` action stores that revision id and hash. The reviewer's original hash is kept in the audit entry (`reviewedHash`, `approvedHash`). A candidate with no graphic is approved as it stands. The database trigger from 1.2 still refuses any approval whose hash differs from its revision's.
+6. The opportunity moves to `approved` (taking `scheduledFor` if given). The status history records `user:<id>` and the reason. An `audit_log` row `review.approve` is written.
+
+**Edits.** An edit never changes an old revision. It is refused if the text no longer fits an enabled channel, the caption is empty, nothing changed, or the reviewer's base is not the newest. A graphic stays on the new revision only if the headline is unchanged; if it changed, the new revision has no graphic and the old one is **stale** until `renderGraphic` is run for the new revision (it now takes `revisionId`, stored in `candidate_renders.revision_id`; a render with none counts as made for revision 1). `ActionContext.rerender` is the hook the render job (1.17) will use; without it the edit reports `graphicStale: true`. **Editing while an approval is in force withdraws it**: the opportunity returns to `awaiting_review`, pending publications for that approval are cancelled, and a `comment` action tagged `approval_withdrawn` is recorded. Publishing (1.13) must also compare the approved hash with the revision it is about to post.
+
+**Other actions.** `REVIEW_TRANSITIONS` is the only place review moves an opportunity: approve (from `awaiting_review`), reject (from `awaiting_review` or `deferred`), defer (from `awaiting_review`; `deferUntil` is only recorded), regenerate and request research (to `generating` / `researching`), reopen (`deferred` to `awaiting_review`, recorded as a `comment` tagged `reopen`). Regenerate also queues one `candidates_generate` job in the `gpu` lane (payload `newCycle: true` and the feedback; idempotent on the action). Request research changes the status only; the orchestrator (1.17) acts on the status. Each action is one transaction with a row-level lock on the opportunity, so two reviewers cannot both succeed.
+
+**Images.** Buckets stay private. `ObjectStore.signedUrl` gives a link valid for `SMB_SIGNED_URL_SECONDS` (default 300) for the render; nothing returns a storage key or credential (a test checks).
+
+**Not in 1.11.** The review screens (XLChess); publishing and its checks (1.13: it must re-check the hash, role, licence and integrity); scheduling (1.14); learning from feedback (1.12: the feedback is stored and passed to the regenerate job, but nothing uses it yet); the render job and automatic re-render after a headline edit (1.17); the administrator routes (1.17, 1.18); a vision check on photographs.

@@ -25,6 +25,7 @@
     "@smb/shared": "*",
     "chess.js": "^1.4.0",
     "express": "^5.0.1",
+    "jose": "^6.2.15",
     "opentype.js": "^1.3.4",
     "pino": "^9.6.0",
     "pino-http": "^10.3.0",

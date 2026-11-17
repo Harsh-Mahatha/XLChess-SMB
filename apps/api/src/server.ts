@@ -1,8 +1,10 @@
 import { createApp } from './app.js';
+import { verifierFromEnv } from './auth/index.js';
 import { loadConfigSet, syncConfigs, syncSources } from './config/index.js';
 import { getDb } from './db/client.js';
 import { loadEnv } from './env.js';
 import { createLogger } from './logger.js';
+import { SupabaseObjectStore } from './storage/index.js';
 
 const env = loadEnv();
 const logger = createLogger(env);
@@ -22,7 +24,26 @@ if (env.DATABASE_URL) {
   logger.info({ sourceResults }, 'source registry synced');
 }
 
-const app = createApp({ env, logger });
+// The reviewer API needs the database and Storage. Without them the server still starts (health only).
+let review;
+if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
+  const db = await getDb();
+  const store = new SupabaseObjectStore({
+    url: env.SUPABASE_URL,
+    serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+  });
+  const verifier = verifierFromEnv(env);
+  if (!verifier) logger.warn('XLChess token settings are incomplete: reviewer routes answer 503');
+  review = {
+    verifier,
+    read: { db, store, channels: configSet.channels, signedUrlSeconds: env.SMB_SIGNED_URL_SECONDS },
+    act: { db, store, channels: configSet.channels },
+  };
+} else {
+  logger.warn('DATABASE_URL or Supabase settings missing: reviewer routes are not mounted');
+}
+
+const app = createApp({ env, logger, review });
 
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, publishMode: env.SMB_PUBLISH_MODE }, 'smb-api listening');
