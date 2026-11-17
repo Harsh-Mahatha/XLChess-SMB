@@ -195,6 +195,8 @@ model post_candidates {
   validation          Json?
   editorial           Json?
   visual_plan         Json?
+  feedback_action_id  String?             @db.Uuid
+  feedback_action     review_actions?     @relation("post_candidates_feedback_action_idToreview_actions", fields: [feedback_action_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   candidate_renders   candidate_renders[]
   jobs                jobs?               @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities  post_opportunities  @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -291,7 +293,14 @@ model post_revisions {
   created_at           DateTime          @default(now()) @db.Timestamptz(6)
   headline             String?
   alt_text             String?
+  change_kind          String?
+  changed_fields       String[]          @default([])
+  change_tags          String[]          @default([])
+  review_action_id     String?           @db.Uuid
+  validation           Json?
+  generation           Json?
   post_candidates      post_candidates   @relation(fields: [candidate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  feedback_action      review_actions?   @relation("post_revisions_review_action_idToreview_actions", fields: [review_action_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_revisions       post_revisions?   @relation("post_revisionsTopost_revisions", fields: [parent_revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   other_post_revisions post_revisions[]  @relation("post_revisionsTopost_revisions")
   candidate_renders    candidate_renders[]
@@ -302,6 +311,7 @@ model post_revisions {
 
   @@unique([candidate_id, revision_no])
   @@index([content_hash], map: "post_revisions_hash")
+  @@index([review_action_id], map: "post_revisions_review_action")
   @@schema("smb")
 }
 
@@ -446,6 +456,9 @@ model review_actions {
   post_candidates    post_candidates?   @relation(fields: [candidate_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_revisions     post_revisions?    @relation(fields: [revision_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  answered_by_candidates post_candidates[] @relation("post_candidates_feedback_action_idToreview_actions")
+  answered_by_revisions  post_revisions[]  @relation("post_revisions_review_action_idToreview_actions")
+  story_selections       story_selections[]
 
   @@index([opportunity_id, created_at], map: "review_actions_opportunity")
   @@index([reviewer_id, created_at(sort: Desc)], map: "review_actions_reviewer")
@@ -510,12 +523,14 @@ model story_selections {
   selector_version    String
   job_id              String?            @db.Uuid
   created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  review_action_id    String?            @db.Uuid
+  excluded_angles     String[]           @default([])
   post_candidates     post_candidates[]
+  review_actions      review_actions?    @relation(fields: [review_action_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   jobs                jobs?              @relation(fields: [job_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   post_opportunities  post_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   research_packages   research_packages  @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@unique([opportunity_id, research_package_id])
   @@index([created_at(sort: Desc)], map: "story_selections_recent")
   @@schema("smb")
 }
@@ -713,6 +728,7 @@ enum review_action_type {
   regenerate
   request_research
   comment
+  revise
 
   @@schema("smb")
 }
