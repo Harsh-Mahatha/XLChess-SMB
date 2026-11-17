@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { HealthResponse } from '@smb/shared';
@@ -15,14 +16,34 @@ describe('api skeleton', () => {
     expect(body.publishMode).toBe('dry_run');
   });
 
-  it('serves an OpenAPI document that includes /health', async () => {
+  it('serves an OpenAPI document that includes /health and /v1/publications', async () => {
     const res = await request(app).get('/v1/openapi.json').expect(200);
     expect(res.body.paths['/health']).toBeDefined();
+    expect(res.body.paths['/v1/publications']).toBeDefined();
   });
 
   it('uses the standard error shape for unknown routes', async () => {
     const res = await request(app).get('/nope').expect(404);
     expect(res.body.error.code).toBe('not_found');
+  });
+});
+
+describe('publications router mounting', () => {
+  it('does not mount /v1/publications without publishing deps (404)', async () => {
+    const res = await request(app).get('/v1/publications').expect(404);
+    expect(res.body.error.code).toBe('not_found');
+  });
+
+  it('answers 401 without a token when publishing deps are mounted with a verifier', async () => {
+    const fakeVerifier = { verify: async () => ({ userId: 'u', role: 'admin' as const }) };
+    const appWithPub = createApp({
+      env,
+      logger: createLogger(env),
+      review: { verifier: fakeVerifier as any, read: {} as any, act: {} as any },
+      publishing: {} as any,
+    });
+    const res = await request(appWithPub).get('/v1/publications').expect(401);
+    expect(res.body.error.code).toBe('invalid_token');
   });
 });
 
