@@ -31,7 +31,15 @@ describe('env safety', () => {
     expect(() => loadEnv({ SMB_PUBLISH_MODE: 'live' })).toThrow(/SMB_ALLOW_LIVE_PUBLISH/);
   });
   it('allows live only when both gates are set', () => {
-    const e = loadEnv({ SMB_PUBLISH_MODE: 'live', SMB_ALLOW_LIVE_PUBLISH: 'true' });
+    const e = loadEnv({
+      SMB_PUBLISH_MODE: 'live',
+      SMB_ALLOW_LIVE_PUBLISH: 'true',
+      X_API_KEY: 'k',
+      X_API_SECRET: 's',
+      X_ACCESS_TOKEN: 't',
+      X_ACCESS_TOKEN_SECRET: 'ts',
+      X_USER_ID: '123',
+    });
     expect(e.SMB_PUBLISH_MODE).toBe('live');
   });
 });

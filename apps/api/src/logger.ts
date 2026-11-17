@@ -13,6 +13,18 @@ export const REDACT_PATHS = [
   '*.apiKey',
   'SUPABASE_SERVICE_ROLE_KEY',
   'XLCHESS_JWT_SECRET',
+  'X_API_KEY',
+  'X_API_SECRET',
+  'X_ACCESS_TOKEN',
+  'X_ACCESS_TOKEN_SECRET',
+  '*.apiSecret',
+  '*.accessTokenSecret',
+  '*.consumerSecret',
+  '*.oauth_signature',
+  'headers.authorization',
+  'headers.Authorization',
+  '*.headers.authorization',
+  '*.headers.Authorization',
 ];
 
 export function createLogger(env: Pick<Env, 'LOG_LEVEL'>, destination?: DestinationStream): Logger {
