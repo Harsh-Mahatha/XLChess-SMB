@@ -19,7 +19,9 @@
     "images:discover": "tsx --env-file-if-exists=../../.env src/images/cli.ts",
     "assets:verify": "tsx --env-file-if-exists=../../.env src/assets/cli.ts verify",
     "assets:purge": "tsx --env-file-if-exists=../../.env src/assets/cli.ts purge",
-    "graphics:render": "tsx --env-file-if-exists=../../.env src/graphics/cli.ts"
+    "graphics:render": "tsx --env-file-if-exists=../../.env src/graphics/cli.ts",
+    "publish:due": "tsx --env-file-if-exists=../../.env src/publishing/cli.ts due",
+    "publish:one": "tsx --env-file-if-exists=../../.env src/publishing/cli.ts one"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.0",
