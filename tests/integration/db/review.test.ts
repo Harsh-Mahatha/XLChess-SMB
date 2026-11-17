@@ -326,6 +326,9 @@ describe('approval binds to the exact revision, including the graphic', () => {
     expect(bound.parent_revision_id).toBe(revs[0].id);
     expect(bound.author_kind).toBe('human');
     expect(bound.author_id).toBe('user-alice');
+    // Marked as the binding revision, so it is never counted as an edit (module 1.12).
+    expect(bound.change_kind).toBe('binding');
+    expect(bound.changed_fields).toEqual([]);
     expect(bound.content_hash).toBe(result.contentHash);
     const render = (
       await rows<any>(pgc, 'select * from smb.candidate_renders where candidate_id = $1', [
