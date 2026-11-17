@@ -42,10 +42,10 @@ export interface GenerateOptions extends GenerationOptions {
 
 async function existing(
   db: Prisma.TransactionClient | PrismaClient,
-  selectionId: string,
+  where: { story_selection_id: string } | { feedback_action_id: string },
 ): Promise<StoredGeneration | undefined> {
   const rows = await db.post_candidates.findMany({
-    where: { story_selection_id: selectionId },
+    where,
     orderBy: [{ generation_cycle: 'desc' }, { slot: 'asc' }],
     include: { post_revisions: { orderBy: { revision_no: 'asc' }, take: 1 } },
   });
@@ -101,10 +101,14 @@ export async function saveGeneration(
   const result = recheckGeneration(produced, input);
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`select pg_advisory_xact_lock(hashtext(${'smb.generate:' + input.opportunityId}))`;
-    if (!options.newCycle) {
-      const already = await existing(tx, selectionId);
-      if (already) return already;
-    }
+    // A retried job changes nothing: one set per story, and one more per regeneration request.
+    const asked = input.reviewerFeedback?.actionId;
+    const already = !options.newCycle
+      ? await existing(tx, { story_selection_id: selectionId })
+      : asked
+        ? await existing(tx, { feedback_action_id: asked })
+        : undefined;
+    if (already) return already;
     const latest = await tx.post_candidates.aggregate({
       where: { opportunity_id: input.opportunityId },
       _max: { generation_cycle: true },
@@ -135,6 +139,7 @@ export async function saveGeneration(
           prompt_version: result.promptVersions.candidate ?? '',
           job_id: options.jobId,
           story_selection_id: selectionId,
+          feedback_action_id: asked,
           approach: c.approach,
           prompt_versions: result.promptVersions as Prisma.InputJsonValue,
           generation_settings: result.settings as Prisma.InputJsonValue,
@@ -194,15 +199,20 @@ export async function generateCandidates(
       `status is ${opp.status}, expected generating`,
     );
   }
+  // A regeneration is written with what the reviewer asked for (module 1.12).
   const { input, selectionId } = await buildInputForOpportunity(
     deps.db,
     deps.channels,
     opportunityId,
+    { withFeedback: options.newCycle },
   );
-  if (!options.newCycle) {
-    const already = await existing(deps.db, selectionId);
-    if (already) return already;
-  }
+  const asked = input.reviewerFeedback?.actionId;
+  const already = !options.newCycle
+    ? await existing(deps.db, { story_selection_id: selectionId })
+    : asked
+      ? await existing(deps.db, { feedback_action_id: asked })
+      : undefined;
+  if (already) return already;
   const result = await runGeneration(deps.provider, input, options);
   return saveGeneration(deps.db, input, selectionId, result, options);
 }

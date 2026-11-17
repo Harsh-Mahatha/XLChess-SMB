@@ -41,6 +41,8 @@ export interface SelectionInput {
   now: Date;
   /** Defaults to the whole catalogue. Tests pass their own. */
   catalogue?: readonly AngleDefinition[];
+  /** Angles a reviewer turned down for this opportunity (module 1.12). They are never chosen again for it. */
+  excludedAngles?: readonly string[];
 }
 
 export interface SelectionResult {
@@ -138,6 +140,10 @@ export function rankStories(input: SelectionInput): SelectionResult {
     }
     if (allowed && !allowed.has(angle.id)) {
       reject('disabled', 'not listed in storySelection.angles');
+      return base();
+    }
+    if (input.excludedAngles?.includes(angle.id)) {
+      reject('reviewer_rejected', 'a reviewer asked for a different story than this one');
       return base();
     }
     const native = angle.phases.includes(phase);
