@@ -169,10 +169,110 @@ describe('approval and publication binding', () => {
     ).rejects.toThrow(/duplicate key/);
   });
 
-  it('requires an external id before a publication can be marked published', async () => {
+  it('enforces publication status transition rules', async () => {
     await expect(
       q(`update smb.publications set status = 'published' where id = '${ID.publication}'`),
+    ).rejects.toThrow(/invalid publication status transition from dry_run_recorded to published/);
+  });
+
+  it('requires an external id, published_at and url before a publication can be marked published', async () => {
+    const opp = (
+      await q(
+        `insert into smb.post_opportunities (post_type_id, post_config_id, dedupe_key, trigger_kind)
+         values ('1.1', '${ID.config}', '1.1:wcc-2026:game-7-constraint-test', 'event')
+         returning id`,
+      )
+    ).rows[0].id;
+    const cand = (
+      await q(
+        `insert into smb.post_candidates (opportunity_id, research_package_id, generation_cycle, slot, provider, prompt_version)
+         values ($1, '${ID.package}', 1, 'A', 'stub', 'p@1')
+         returning id`,
+        [opp],
+      )
+    ).rows[0].id;
+    const rev = (
+      await q(
+        `insert into smb.post_revisions (candidate_id, revision_no, caption, content_hash, author_kind)
+         values ($1, 1, 'cap', '${hex('a')}', 'ai')
+         returning id`,
+        [cand],
+      )
+    ).rows[0].id;
+    const app = (
+      await q(
+        `insert into smb.review_actions (opportunity_id, candidate_id, revision_id, action, content_hash, reviewer_id, channels)
+         values ($1, $2, $3, 'approve', '${hex('a')}', 'user-1', '{x}')
+         returning id`,
+        [opp, cand, rev],
+      )
+    ).rows[0].id;
+    const pub = (
+      await q(
+        `insert into smb.publications (approval_id, revision_id, channel, mode, status, content_hash, idempotency_key)
+         values ($1, $2, 'x', 'live', 'pending', '${hex('a')}', 'pub-live-constraints')
+         returning id`,
+        [app, rev],
+      )
+    ).rows[0].id;
+
+    await q(`update smb.publications set status = 'publishing' where id = $1`, [pub]);
+
+    // Missing external_id and published_at
+    await expect(
+      q(`update smb.publications set status = 'published' where id = $1`, [pub]),
     ).rejects.toThrow(/check constraint/);
+
+    // Missing url even if external_id and published_at are provided
+    await expect(
+      q(
+        `update smb.publications set status = 'published', external_id = '123', published_at = now() where id = $1`,
+        [pub],
+      ),
+    ).rejects.toThrow(/publications_published_url_check/);
+  });
+
+  it('enforces mode consistency with status on publications', async () => {
+    const opp = (
+      await q(
+        `insert into smb.post_opportunities (post_type_id, post_config_id, dedupe_key, trigger_kind)
+         values ('1.1', '${ID.config}', '1.1:wcc-2026:game-7-mode-test', 'event')
+         returning id`,
+      )
+    ).rows[0].id;
+    const cand = (
+      await q(
+        `insert into smb.post_candidates (opportunity_id, research_package_id, generation_cycle, slot, provider, prompt_version)
+         values ($1, '${ID.package}', 1, 'A', 'stub', 'p@1')
+         returning id`,
+        [opp],
+      )
+    ).rows[0].id;
+    const rev = (
+      await q(
+        `insert into smb.post_revisions (candidate_id, revision_no, caption, content_hash, author_kind)
+         values ($1, 1, 'cap', '${hex('b')}', 'ai')
+         returning id`,
+        [cand],
+      )
+    ).rows[0].id;
+    const app = (
+      await q(
+        `insert into smb.review_actions (opportunity_id, candidate_id, revision_id, action, content_hash, reviewer_id, channels)
+         values ($1, $2, $3, 'approve', '${hex('b')}', 'user-1', '{x}')
+         returning id`,
+        [opp, cand, rev],
+      )
+    ).rows[0].id;
+
+    // dry_run_recorded requires mode = 'dry_run'
+    await expect(
+      q(
+        `insert into smb.publications (approval_id, revision_id, channel, mode, status, content_hash, idempotency_key)
+         values ($1, $2, 'x', 'live', 'dry_run_recorded', '${hex('b')}', 'pub-mode-err-1')`,
+        [app, rev],
+      ),
+    ).rejects.toThrow(/publications_dry_run_recorded_check/);
   });
 });
 
