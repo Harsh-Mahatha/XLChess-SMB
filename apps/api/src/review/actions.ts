@@ -7,6 +7,7 @@ import {
   normaliseTags,
   type ChangeKind,
   type ChannelsRegistry,
+  type PublishMode,
 } from '@smb/shared';
 import { AssetIntegrityError, ensureAssetsIntact } from '../assets/index.js';
 import { revisionHash } from '../generation/service.js';
@@ -38,6 +39,7 @@ export interface ActionContext {
   store: ObjectStore;
   channels: ChannelsRegistry;
   now?: () => Date;
+  publishMode?: PublishMode;
   /**
    * Makes a new graphic for a revision whose headline changed. The render job belongs to module 1.17; until
    * it is wired, an edit that changes the graphic's words leaves the graphic marked stale and approval
@@ -141,6 +143,12 @@ export interface ApproveResult {
   /** True when approving made a new revision to carry the graphic into the hash. */
   boundRevisionCreated: boolean;
   replayed: boolean;
+  publications?: Array<{
+    id: string;
+    channel: string;
+    mode: string;
+    scheduledFor: string | null;
+  }>;
 }
 
 async function approvedResult(
@@ -156,10 +164,24 @@ async function approvedResult(
   },
   replayed: boolean,
   created = false,
+  createdPubs?: Array<{ id: string; channel: string; mode: string; scheduledFor: string | null }>,
 ): Promise<ApproveResult> {
   const graphic = await tx.revision_assets.findFirst({
     where: { revision_id: action.revision_id!, role: 'graphic' },
   });
+  let publications = createdPubs;
+  if (!publications) {
+    const pubRows = await tx.publications.findMany({
+      where: { approval_id: action.id },
+      orderBy: { created_at: 'asc' },
+    });
+    publications = pubRows.map((p) => ({
+      id: p.id,
+      channel: p.channel,
+      mode: p.mode,
+      scheduledFor: p.scheduled_for?.toISOString() ?? null,
+    }));
+  }
   return {
     approvalId: action.id,
     opportunityId: action.opportunity_id,
@@ -171,6 +193,7 @@ async function approvedResult(
     graphicAssetId: graphic?.asset_id ?? null,
     boundRevisionCreated: created,
     replayed,
+    publications,
   };
 }
 
@@ -424,6 +447,32 @@ export async function approveRevision(
           ...(input.scheduledFor ? { scheduled_for: input.scheduledFor } : {}),
         },
       });
+      const createdPubs: Array<{
+        id: string;
+        channel: string;
+        mode: string;
+        scheduledFor: string | null;
+      }> = [];
+      for (const c of channels) {
+        const pub = await tx.publications.create({
+          data: {
+            approval_id: action.id,
+            revision_id: bound.id,
+            channel: c as never,
+            mode: ctx.publishMode ?? 'dry_run',
+            status: 'pending',
+            content_hash: bound.content_hash,
+            idempotency_key: `pub:${action.id}:${c}`,
+            scheduled_for: input.scheduledFor ?? null,
+          },
+        });
+        createdPubs.push({
+          id: pub.id,
+          channel: pub.channel,
+          mode: pub.mode,
+          scheduledFor: pub.scheduled_for?.toISOString() ?? null,
+        });
+      }
       await tx.audit_log.create({
         data: {
           actor: actor.userId,
@@ -440,10 +489,11 @@ export async function approveRevision(
             graphicAssetId: graphicAsset?.id ?? null,
             template: render?.template_version ?? null,
             acknowledgedFailedChecks: Boolean(input.acknowledgeFailedChecks),
+            publications: createdPubs.map((p) => p.id),
           },
         },
       });
-      return approvedResult(tx, action, false, created);
+      return approvedResult(tx, action, false, created, createdPubs);
     },
     { timeout: 20_000 },
   );

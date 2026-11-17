@@ -37,7 +37,7 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   review = {
     verifier,
     read: { db, store, channels: configSet.channels, signedUrlSeconds: env.SMB_SIGNED_URL_SECONDS },
-    act: { db, store, channels: configSet.channels },
+    act: { db, store, channels: configSet.channels, publishMode: env.SMB_PUBLISH_MODE },
   };
 } else {
   logger.warn('DATABASE_URL or Supabase settings missing: reviewer routes are not mounted');
