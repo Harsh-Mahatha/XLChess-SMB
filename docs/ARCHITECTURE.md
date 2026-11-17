@@ -134,11 +134,12 @@ interface ImageSource {
 // renderGraphic(deps, { template, aspect, data, candidateId? }) -> RenderResult   (apps/api/src/graphics/render.ts)
 
 // Publishing adapters (1.13, 1.23)
-interface PublishingAdapter {
-  channel: 'x' | 'facebook' | 'instagram' | 'discord';
-  validate(pkg: ApprovedPackage): ChannelCheck;          // length, media, alt text
-  publish(pkg: ApprovedPackage, idemKey: string): Promise<PublishResult>;
-  lookup(idemKey: string): Promise<PublishResult | null>; // safe recovery after a timeout
+interface SocialPublisher {
+  readonly channel: Channel;
+  validate(post: ApprovedPost): ValidationResult;
+  publish(post: ApprovedPost, signal?: AbortSignal): Promise<PublishResult>;
+  lookup(post: ApprovedPost, since: Date): Promise<LookupResult>;
+  getStatus(externalId: string): Promise<'live' | 'deleted' | 'unknown'>;
 }
 ```
 
@@ -270,8 +271,8 @@ Errors use one shape: `{ error: { code, message, details? } }`. Mutating reviewe
 | No licensable image | The photo is rejected. The pipeline falls back to the template's no-photo variant or flags the opportunity. |
 | Render failure | Only the render step is retried |
 | Revision edited after approval | The hash mismatch invalidates the approval, and the post goes back to `awaiting_review` |
-| X publish timeout | `lookup(idemKey)` runs **before** any retry, so the post is never double-posted |
-| One channel fails | Only that `publications` row is retried |
+| X publish timeout | Moves to `uncertain`; timeline lookup (`matchKey` and media attachments) runs **before** any retry, so the post is never double-posted (module 1.13) |
+| One channel fails | Only that `publications` row is retried; `settleOpportunity` handles partial success (`partially_published`) (module 1.13) |
 | API restart | All state is in Postgres. Cron is re-derived, server jobs with expired leases are re-queued, and the advisory lock stops duplicate schedulers. |
 
 ---
@@ -487,7 +488,7 @@ Code: `apps/api/src/story/`. Angle catalogue and contracts: `packages/shared/src
 
 **Score** = weighted significance (0.35), timeliness (0.25), novelty (0.20, `1 - highest similarity to history`), relevance (0.10) and channel suitability (0.10), normalised to 0..1. Override weights, the minimum score and the angle allow-list per post type with the optional `storySelection` block (all values validated; unknown angle ids are refused).
 
-**Deduplication.** History is the post type's selections within `deduplication.windowDays` whose opportunity is generating, in review, approved, scheduled, publishing or published. A rejected, deferred, skipped or failed opportunity frees its story. Same angle about a different game, or after a meaningful change (new leader, new margin), is allowed; the same game or standing again is not. Caption-level duplicate checking before publishing is module 1.13.
+**Deduplication.** History is the post type's selections within `deduplication.windowDays` whose opportunity is generating, in review, approved, scheduled, publishing or published. A rejected, deferred, skipped or failed opportunity frees its story. Same angle about a different game, or after a meaningful change (new leader, new margin), is allowed; the same game or standing again is not. Caption-level duplicate checking before publishing is module 1.13 (see below).
 
 **No worthwhile post.** If nothing is eligible, the outcome is `no_worthwhile_post` and the opportunity becomes `skipped` (a new `opportunity_status`, distinct from `failed` and `rejected`). SMB never invents a development to fill a slot.
 
@@ -710,3 +711,50 @@ Definitions: **unedited** = the approved text equals the candidate's first revis
 **Dev tools:** `npm run candidates:revise -- --candidate <id> --feedback "..." [--tags a,b]` (or `--action <id>`), `npm run feedback:report -- [--post-type 1.1] [--from] [--to] [--corrections] [--json]`. `candidates:generate --new-cycle` now uses the newest regeneration request.
 
 **Not in 1.12.** Running the regenerate and rewrite jobs from the queue, and marking them done (1.17: call `generateCandidates` with `newCycle` and `reviseCandidate`/`saveRevision`). The KPI dashboard and the ten-day streak (1.19 reads `smb.review_outcomes` and the summary). XLChess: proxy routes for `/candidates/:id/revise` and `/feedback/*`, a tag picker, a factual/creative choice on the edit form, a rewrite button and a report page. Feedback does not reach the `interpret` stage, and a rewrite does not redo the visual plan or alt text. Review effort is elapsed time only.
+
+---
+
+## X publishing and duplicate safeguards (module 1.13)
+
+Code: `packages/shared/src/domain/` (status & attempt enums, caption similarity), `apps/api/src/publishing/` (`types.ts`, `registry.ts`, `package.ts`, `preflight.ts`, `service.ts`, `cli.ts`, `schemas.ts`, and `x/` with `oauth1.ts`, `client.ts`, `text.ts`, `adapter.ts`, `dry-run.ts`), `apps/api/src/http/routes/publications.ts`, `apps/api/src/http/idempotency.ts`, migrations `20261103002000` and `20261103002100`.
+
+**What happens.**
+1. **Creation at approval.** When an opportunity revision is approved (module 1.11), `approveRevision` inserts one pending publication row per approved channel inside the approval transaction (`idempotency_key = pub:<approvalId>:<channel>`, mode, scheduled_for, bound content hash). If an approval is withdrawn by an edit before publishing starts, the pending row is cancelled.
+2. **Pre-flight checks (`preflight.ts`).** Before sending to a channel, seven safeguards run without aborting early, verifying:
+   - *1. Valid approval:* must be the newest approve action, not withdrawn, opportunity in approved/scheduled/publishing (`approval_not_in_force`).
+   - *2. Approved version unchanged:* recomputes `revisionHash` against content hash, ensures revision is newest and in current generation cycle (`hash_mismatch`, `revision_superseded`).
+   - *3. Required media exists:* verifies image assets exist, are not deleted, and read bytes match sha256 (`media_missing`, `media_changed`).
+   - *4. Image rights and pixel integrity:* runs `assertAssetsLicensed` (1.8) and `ensureAssetsIntact` (1.9) (`licence_problem`, `integrity_problem`).
+   - *5. Channel constraints:* validates 280-character limit, up to 4 images, PNG/JPEG under 5 MB, alt text presence and length (`channel_rules`, `channel_disabled`).
+   - *6. Duplicate safeguards:* no other publication in-flight or published for the same opportunity (`already_published`). Caption-level deduplication compares normalized `matchKey` and trigram Jaccard `captionSimilarity` against recently published posts on the channel within the post type's window (`duplicate_caption`).
+   - *7. Schedule & expiration:* respects `scheduled_for` and `retry_after`; marks `expired` if current time exceeds `not_after`.
+   - *Mode safety:* live row requires live env and `SMB_ALLOW_LIVE_PUBLISH`; sandbox requires sandbox or live env (`mode_not_allowed`, leaves row pending).
+3. **Exactly-once send flow (`publishPublication`).**
+   - *Claim (tx 1):* locks the opportunity, then locks publication row (`for update skip locked`), runs preflight. Sets status to `publishing`, sets `claimed_at = now`, increments `attempt_count`. Transitions opportunity to `publishing`.
+   - *Call channel (outside tx):* delegates to `SocialPublisher.publish(post)` via `XPublisher` or `DryRunPublisher`. Media is uploaded first with alt text, then tweet is created.
+   - *Record (tx 2):* writes an immutable `publication_attempts` row with sanitized request/response summaries (no headers, secrets, or signatures). On 201: sets publication to `published` with external ID and URL; writes `publication.published` audit log. On timeout/5xx: moves row to `uncertain` with backoff; never retries blindly. On 429: stays `pending` with `retry_after = resetEpoch` (attempt count decremented back). On client/rule error: moves to `failed`. Calls `settleOpportunity`.
+4. **Reconciliation (`reconcilePublication`).**
+   - For `uncertain` publications past `retry_after`, queries user timeline via `XPublisher.lookup` (`GET /2/users/:id/tweets`). Matches post text and media attachments.
+   - If found: transitions to `published`, records `lookup_found`, audits `publication.reconciled`.
+   - If absent: transitions to `pending` with `retry_after = now` so the next sweep retries.
+   - If lookup fails: exponential backoff until `X_RECONCILE_MAX_LOOKUPS` (default 5). If exceeded, stops retry scheduling and sets `last_error = 'needs_manual_resolution'`.
+   - Crash safety: a row stuck in `publishing` past `2 * timeout + 60s` is recovered to `uncertain` and reconciled before anything is resent.
+5. **Publish modes & credentials.**
+   - `dry_run`: `DryRunPublisher` validates post constraints and records `dry_run_recorded` with 0 network calls.
+   - `sandbox`: live network calls against X using sandbox credentials.
+   - `live`: live posts to production accounts; requires `SMB_ALLOW_LIVE_PUBLISH=true` and `NODE_ENV=production` checks.
+   - Credentials (`X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`) are encapsulated in `XCredentials` and redacted across all log streams.
+
+| Route | Method | Access | Description |
+|---|---|---|---|
+| `/v1/publications` | GET | Admin | List publications with `status`, `channel`, `limit`, `before` filters and `needsAttention` flag |
+| `/v1/publications/:id` | GET | Admin | Publication detail and attempt history (request/response summaries) |
+| `/v1/publications/:id/retry` | POST | Admin | Reset `failed` publication to `pending`, resets attempt count to 0, audits `publication.retry` |
+| `/v1/publications/:id/reconcile` | POST | Admin | Triggers immediate reconciliation lookup for an `uncertain` publication |
+| `/v1/publications/:id/resolve` | POST | Admin | Human decision (`published`, `not_published`, `abandon`) with audit log and opportunity settling |
+
+**Dev tools:**
+- `npm run publish:due -- [--limit 10]`
+- `npm run publish:one -- --publication <id> [--reconcile]`
+
+**Not in 1.13.** Recurring minute-by-minute scheduling runner (1.17: `publishDue` scheduled via advisory lock). Additional social platforms (1.23: Facebook, Instagram, Discord). XLChess administrative UI screens.

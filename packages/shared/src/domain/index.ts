@@ -31,12 +31,30 @@ export type PublishMode = z.infer<typeof PublishMode>;
 export const PublicationStatus = z.enum([
   'pending',
   'publishing',
+  'uncertain',
   'published',
   'dry_run_recorded',
   'failed',
   'cancelled',
 ]);
 export type PublicationStatus = z.infer<typeof PublicationStatus>;
+
+export const PublicationAttemptOutcome = z.enum([
+  'success',
+  'failure',
+  'timeout',
+  'dry_run',
+  'rate_limited',
+  'refused',
+  'lookup_found',
+  'lookup_absent',
+  'lookup_failed',
+  'manual',
+]);
+export type PublicationAttemptOutcome = z.infer<typeof PublicationAttemptOutcome>;
+
+export const PublicationAttemptKind = z.enum(['send', 'lookup', 'manual']);
+export type PublicationAttemptKind = z.infer<typeof PublicationAttemptKind>;
 
 export const ReviewActionType = z.enum([
   'approve',

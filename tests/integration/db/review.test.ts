@@ -758,12 +758,33 @@ describe('editing', () => {
 
   it('withdraws an approval in force, cancels its pending publications and records why', async () => {
     const f = await fixture();
-    const approved = await approveRevision(ctx, alice, approveInput(f, 1));
-    await pgc.query(
-      `insert into smb.publications (approval_id, revision_id, channel, mode, content_hash, idempotency_key)
-       values ($1, $2, 'x', 'dry_run', $3, 'pub-key-1')`,
-      [approved.approvalId, approved.revisionId, approved.contentHash],
+    const approved = await approveRevision(
+      ctx,
+      alice,
+      approveInput(f, 1, { idempotencyKey: 'withdraw-pub-key-1' }),
     );
+    expect(approved.publications).toHaveLength(1);
+    const pubCreated = approved.publications![0]!;
+    expect(pubCreated.channel).toBe('x');
+    expect(pubCreated.mode).toBe('dry_run');
+
+    const pubBefore = (
+      await rows<any>(pgc, 'select * from smb.publications where id = $1', [pubCreated.id])
+    )[0];
+    expect(pubBefore.status).toBe('pending');
+    expect(pubBefore.content_hash).toBe(approved.contentHash);
+    expect(pubBefore.idempotency_key).toBe(`pub:${approved.approvalId}:x`);
+
+    // Replaying approval returns the exact same publication and creates nothing new
+    const replayed = await approveRevision(
+      ctx,
+      alice,
+      approveInput(f, 1, { idempotencyKey: 'withdraw-pub-key-1' }),
+    );
+    expect(replayed.replayed).toBe(true);
+    expect(replayed.publications).toHaveLength(1);
+    expect(replayed.publications![0]!.id).toBe(pubCreated.id);
+
     const r = await editCandidate(ctx, bob, f.candidates[1]!.id, {
       baseRevisionId: approved.revisionId,
       caption: 'Changed my mind.',
@@ -774,10 +795,9 @@ describe('editing', () => {
         .status,
     ).toBe('awaiting_review');
     const pub = (
-      await rows<any>(
-        pgc,
-        "select status, last_error from smb.publications where idempotency_key = 'pub-key-1'",
-      )
+      await rows<any>(pgc, 'select status, last_error from smb.publications where id = $1', [
+        pubCreated.id,
+      ])
     )[0];
     expect(pub.status).toBe('cancelled');
     expect(pub.last_error).toMatch(/edited/);
@@ -798,6 +818,23 @@ describe('editing', () => {
       channels: ['x'],
     });
     expect(again.replayed).toBe(false);
+  });
+
+  it('cannot edit an opportunity once publishing has begun', async () => {
+    const f = await fixture();
+    const approved = await approveRevision(ctx, alice, approveInput(f, 1));
+    // Simulate publisher moving opportunity to 'publishing'
+    await pgc.query("update smb.post_opportunities set status = 'publishing' where id = $1", [
+      f.opportunityId,
+    ]);
+    await expectReviewError(
+      editCandidate(ctx, bob, f.candidates[1]!.id, {
+        baseRevisionId: approved.revisionId,
+        caption: 'Too late to edit.',
+      }),
+      'wrong_status',
+      409,
+    );
   });
 
   it('uses the re-render hook, when there is one, so a headline change does not leave a stale graphic', async () => {

@@ -1,4 +1,4 @@
-import { Router, type Request } from 'express';
+import { Router } from 'express';
 import { actorOf, authenticate, requireRole, type TokenVerifier } from '../../auth/index.js';
 import {
   ActionBody,
@@ -20,6 +20,7 @@ import {
   type ReviewTransition,
 } from '../../review/index.js';
 import { HttpError } from '../errors.js';
+import { idempotencyKey } from '../idempotency.js';
 
 export interface ReviewRouteDeps {
   verifier: TokenVerifier | undefined;
@@ -33,19 +34,6 @@ function translate(err: unknown): never {
     throw new HttpError(err.status, err.code, err.message, err.details);
   if (err instanceof ReviewNotFoundError) throw new HttpError(404, 'not_found', err.message);
   throw err;
-}
-
-function idempotencyKey(req: Request): string | undefined {
-  const key = req.header('idempotency-key');
-  if (key === undefined) return undefined;
-  if (!/^[\x21-\x7e]{8,100}$/.test(key)) {
-    throw new HttpError(
-      400,
-      'bad_idempotency_key',
-      'Idempotency-Key must be 8 to 100 visible characters',
-    );
-  }
-  return key;
 }
 
 /**

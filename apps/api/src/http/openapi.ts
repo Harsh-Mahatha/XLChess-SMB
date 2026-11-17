@@ -15,6 +15,12 @@ import {
   QueueQuery,
   ReviseBody,
 } from '../review/schemas.js';
+import {
+  ListPublicationsQuery,
+  PublicationIdParam,
+  ResolvePublicationBody,
+  RetryPublicationBody,
+} from '../publishing/schemas.js';
 
 extendZodWithOpenApi(z);
 
@@ -165,6 +171,56 @@ registry.registerPath({
   security: secured,
   request: { query: CorrectionsQuery },
   responses: { 200: ok('Edits and feedback'), ...errors },
+});
+
+// Publications administration (module 1.13).
+registry.registerPath({
+  method: 'get',
+  path: '/v1/publications',
+  summary: 'List publications with status, channel, and cursor filtering',
+  security: secured,
+  request: { query: ListPublicationsQuery },
+  responses: { 200: ok('List of publications'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/publications/{id}',
+  summary: 'Publication detail and attempt history',
+  security: secured,
+  request: { params: PublicationIdParam },
+  responses: { 200: ok('Publication detail with attempts'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/publications/{id}/retry',
+  summary: 'Reset a failed publication to pending for retry on the next sweep',
+  security: secured,
+  request: {
+    params: PublicationIdParam,
+    headers: idempotency,
+    body: { content: { 'application/json': { schema: RetryPublicationBody } } },
+  },
+  responses: { 200: ok('Publication reset to pending'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/publications/{id}/reconcile',
+  summary: 'Trigger an immediate reconciliation lookup for an uncertain publication',
+  security: secured,
+  request: { params: PublicationIdParam },
+  responses: { 200: ok('Reconciliation outcome'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/publications/{id}/resolve',
+  summary: 'Record an administrator resolution decision for an uncertain publication',
+  security: secured,
+  request: {
+    params: PublicationIdParam,
+    headers: idempotency,
+    body: { content: { 'application/json': { schema: ResolvePublicationBody } } },
+  },
+  responses: { 200: ok('Resolution recorded'), ...errors },
 });
 
 /** Route modules register their paths on `registry`; XLChess generates its typed client from this document. */

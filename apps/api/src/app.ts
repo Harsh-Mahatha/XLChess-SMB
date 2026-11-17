@@ -7,6 +7,8 @@ import { buildOpenApiDocument } from './http/openapi.js';
 import { feedbackRouter } from './http/routes/feedback.js';
 import { healthRouter } from './http/routes/health.js';
 import { reviewRouter, type ReviewRouteDeps } from './http/routes/review.js';
+import { publicationsRouter } from './http/routes/publications.js';
+import type { PublishDeps } from './publishing/service.js';
 
 export const API_VERSION = '0.1.0';
 
@@ -15,6 +17,8 @@ export interface AppDeps {
   logger: Logger;
   /** The reviewer API. Left out in tests and tools that only need the health route. */
   review?: ReviewRouteDeps;
+  /** Publishing service deps. */
+  publishing?: PublishDeps;
 }
 
 /**
@@ -23,7 +27,7 @@ export interface AppDeps {
  *   /v1/*        XLChess JWT   (review, admin)
  *   /worker/v1/* device token  (home-PC worker)
  */
-export function createApp({ env, logger, review }: AppDeps): Express {
+export function createApp({ env, logger, review, publishing }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(pinoHttp({ logger }));
@@ -36,6 +40,9 @@ export function createApp({ env, logger, review }: AppDeps): Express {
   if (review) {
     app.use(reviewRouter(review));
     app.use(feedbackRouter({ verifier: review.verifier, db: review.read.db }));
+  }
+  if (publishing) {
+    app.use(publicationsRouter({ verifier: review?.verifier, publishing }));
   }
 
   app.use(notFoundHandler);
