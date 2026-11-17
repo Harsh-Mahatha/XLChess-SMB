@@ -5,7 +5,16 @@ import {
 } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { ErrorBody, HealthResponse } from '@smb/shared';
-import { ActionBody, ApproveBody, EditBody, IdParam, QueueQuery } from '../review/schemas.js';
+import {
+  ActionBody,
+  ApproveBody,
+  CorrectionsQuery,
+  EditBody,
+  FeedbackSummaryQuery,
+  IdParam,
+  QueueQuery,
+  ReviseBody,
+} from '../review/schemas.js';
 
 extendZodWithOpenApi(z);
 
@@ -97,7 +106,10 @@ registry.registerPath({
 for (const [path, summary] of [
   ['reject', 'Reject the opportunity'],
   ['defer', 'Hold the opportunity for later'],
-  ['regenerate', 'Ask for three new candidates using the feedback'],
+  [
+    'regenerate',
+    'Ask for three new candidates using the feedback; the tag wrong_angle also picks a different story',
+  ],
   ['request-research', 'Send back for more fact checking'],
   ['reopen', 'Return a deferred opportunity to the queue'],
 ] as const) {
@@ -114,6 +126,46 @@ for (const [path, summary] of [
     responses: { 200: ok('Replay of an earlier action'), 201: ok('Action recorded'), ...errors },
   });
 }
+
+// Revisions and feedback learning (module 1.12).
+registry.registerPath({
+  method: 'post',
+  path: '/v1/candidates/{id}/revise',
+  summary:
+    'Ask the model to rewrite one candidate from the feedback; the rewrite arrives as a new revision',
+  security: secured,
+  request: {
+    params: IdParam,
+    headers: idempotency,
+    body: { content: { 'application/json': { schema: ReviseBody } } },
+  },
+  responses: { 200: ok('Replay of an earlier request'), 202: ok('Rewrite queued'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/feedback/tags',
+  summary:
+    'The feedback tag vocabulary: each tag with its category and whether it is a factual correction',
+  security: secured,
+  responses: { 200: ok('Categories and tags'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/feedback/summary',
+  summary:
+    'Per post type: reviewed, approved, approved without edits, rejected, regenerations, factual and creative edits, recurring tags and rejected angles. Rejected posts stay in the denominator',
+  security: secured,
+  request: { query: FeedbackSummaryQuery },
+  responses: { 200: ok('Totals and one entry per post type'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/feedback/corrections',
+  summary: 'What reviewers changed (text before and after) and what they said, newest first',
+  security: secured,
+  request: { query: CorrectionsQuery },
+  responses: { 200: ok('Edits and feedback'), ...errors },
+});
 
 /** Route modules register their paths on `registry`; XLChess generates its typed client from this document. */
 export function buildOpenApiDocument(version: string) {
