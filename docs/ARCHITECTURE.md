@@ -677,7 +677,7 @@ Code: `apps/api/src/auth/` (token check and role guard), `apps/api/src/review/` 
 
 **Images.** Buckets stay private. `ObjectStore.signedUrl` gives a link valid for `SMB_SIGNED_URL_SECONDS` (default 300) for the render; nothing returns a storage key or credential (a test checks).
 
-**Not in 1.11.** The review screens (XLChess); publishing and its checks (1.13: it must re-check the hash, role, licence and integrity); scheduling (1.14); learning from feedback (built in 1.12, see below); the render job and automatic re-render after a headline edit (1.17); the administrator routes (1.17, 1.18); a vision check on photographs.
+**Not in 1.11.** The review screens (XLChess); publishing and its checks (1.13: it must re-check the hash, role, licence and integrity); scheduling (built in 1.14, see below); learning from feedback (built in 1.12, see below); the render job and automatic re-render after a headline edit (1.17); the administrator routes (1.17, 1.18); a vision check on photographs.
 
 ---
 
@@ -758,3 +758,57 @@ Code: `packages/shared/src/domain/` (status & attempt enums, caption similarity)
 - `npm run publish:one -- --publication <id> [--reconcile]`
 
 **Not in 1.13.** Recurring minute-by-minute scheduling runner (1.17: `publishDue` scheduled via advisory lock). Additional social platforms (1.23: Facebook, Instagram, Discord). XLChess administrative UI screens.
+
+---
+
+## Scheduling and posting opportunities (module 1.14)
+
+Code: `packages/shared/src/schedule/` (`zone.ts`, `occurrences.ts`, `keys.ts`), `apps/api/src/scheduling/` (`types.ts`, `context.ts`, `log.ts`, `open.ts`, `holds.ts`, `tick.ts`, `loop.ts`, `cli.ts`), `apps/api/src/http/routes/scheduling.ts`, migration `20261103002200_scheduling.sql`.
+
+**What happens.**
+1. **Clock loop (`runSchedulerTick`).** An in-process loop running every `SMB_SCHEDULER_INTERVAL_SECONDS` (default 60s, off by default via `SMB_SCHEDULER_ENABLED=false`) takes an advisory transaction lock per post type (`pg_advisory_xact_lock(hashtext('smb.sched:' || id))`).
+2. **State & Cursor management.** Recurring rules track handled slots in `smb.schedules` via `cursor_at`. A brand-new rule anchors at `cursor_at = now`. When active, slots in `(cursor_at, now]` are handled:
+   - *Downtime & Coalescing:* Multiple due slots fire only the latest slot, logging earlier ones as `missed_coalesced`. If the latest slot is older than the phase-effective `staleAfterMinutes`, it is logged as `missed_expired` and creates no opportunity.
+   - *Suspension & Inactivity:* If a post type is disabled (`post_type_disabled` or `config_disabled`), suspended by admin hold (`suspended`), replaced by another phase (`phase_inactive`), or held for review by the context resolver (`held_for_review`), its `cursor_at` advances to `now` without firing, preventing backlogs.
+   - *Auto-resume:* An administrator hold with an `until` timestamp auto-resumes once `until` passes, deleting the hold and recording `schedule.resume` in `audit_log`.
+3. **Common Opportunity Creation (`openOpportunityIn`).** Schedules, events and manual triggers all funnel through one creation path:
+   - Validates active configuration, enabled status, and resolves the effective phase (`resolvePhase`).
+   - Renders the unique deduplication key (`renderDedupeKey`) with placeholders `{postType}`, `{eventId}`, `{slot}`, `{date}`, `{week}` (or `manual:<postType>:<requestId>` for manual requests).
+   - Enforces `INSERT ... ON CONFLICT (dedupe_key) DO NOTHING returning id` via raw SQL. Replays or racing ticks return `duplicate` with the existing opportunity id.
+   - Stamped with `trigger_kind`, `trigger_reason`, `triggered_by`, `phase`, `priority`, `scheduled_for`, `not_after`, strict `trigger_ref` (must parse as `ResearchSubject`), and writes to the immutable `smb.trigger_log` and session-audited `opportunity_events`.
+
+### Architectural decisions (D2 to D14)
+
+| Decision | Summary | Rationale |
+|---|---|---|
+| **D2: DST Rules** | Pure `Intl.DateTimeFormat` timezone maths. Spring-forward gaps fire at first instant after gap using pre-gap offset; fall-back overlaps fire at first occurrence. Recurring rules step local calendar dates (23h or 25h across change). | Standard, predictable, never skips or doubles a post. Node 22 full ICU, no extra dependency (D1). |
+| **D3: Poll & Cursor** | Single tick evaluates all active types. Rules track `cursor_at`: slots in `(cursor_at, now]` evaluated, then `cursor_at = now`. | Survives restarts and downtime with zero in-memory state. |
+| **D4: Dual-layer Duplication Guard** | Database `dedupe_key` unique constraint with `ON CONFLICT DO NOTHING` is the hard guarantee. Cursor only avoids redundant work. | Database enforces once-only semantics. |
+| **D5: Missed Executions** | Only latest slot fires; earlier slots logged as `missed_coalesced`. Expired slots (> `staleAfterMinutes`) logged as `missed_expired`. | Avoids spamming stale content after downtime. |
+| **D6: Inactive Backlog Prevention** | Inactive rules advance `cursor_at = now` without firing. Resuming never replays the gap. State transitions logged once. | Resuming weekly schedule after tournament does not flood the channel. |
+| **D7: Initial Anchor** | New rules anchor with `cursor_at = anchor_at = now`. | No look-back; deploying never fires past slots. |
+| **D8: Phase Suspension** | Effective schedule resolved from `resolvePhase(config, phaseAtNow)`. Replaced rules become `phase_inactive`. | Encoded cleanly in configuration. |
+| **D9: Admin Suspension** | Holds per post type stored in `smb.schedule_holds`, audited in `audit_log`. Auto-resumes when `until` expires. | Supports temporary operational blackout periods. |
+| **D10: Disabled Meaning** | `post_types.enabled = false` or `config.enabled = false` blocks schedule, event, and manual triggers (`refused: post_type_disabled`). | Consistent definition of "off". |
+| **D11: Context Hook** | Pluggable `ContextResolver` registry. Default resolver: phase `null`, `{ eventRefs: {} }`, eventKey `pt<id>`. Returns `ready` or `hold`. | Generic seam ready for 1.15 championship lifecycle. |
+| **D12: Event Trigger Guard** | Event triggers require matching event configured in active phase schedule; otherwise `refused: trigger_not_configured`. | Rejects out-of-phase events (e.g. game completion during pre-tournament). |
+| **D13: Manual Trigger Isolation** | Manual triggers use `manual:<postType>:<requestId>` derived from `Idempotency-Key` or UUID. Never blocked by schedule suspension. | Allows editorial on-demand posts without colliding with recurring schedules. |
+| **D14: Dedupe Key Rendering** | Supports `{postType}`, `{eventId}`, `{slot}`, `{date}`, `{week}` in config templates. | Full placeholder coverage across all post types. |
+
+| Route | Method | Access | Description |
+|---|---|---|---|
+| `/v1/schedules` | GET | Admin | List recurring schedules, states, next execution times, and active holds |
+| `/v1/schedules/suspend` | POST | Admin | Suspend recurring schedules for a post type (`until`, `reason`) |
+| `/v1/schedules/resume` | POST | Admin | Resume recurring schedules for a post type (deletes hold, logs audit) |
+| `/v1/scheduler/log` | GET | Admin | Query immutable trigger log entries (`outcome`, `postTypeId`, `before`, `limit`) |
+| `/v1/opportunities/manual` | POST | Admin | Create manual posting opportunity with optional `Idempotency-Key` header |
+
+**Dev tools:**
+- `npm run schedule:tick -- [--now <ISO>]`
+- `npm run schedule:status`
+- `npm run schedule:preview -- --post-type 1.1 --days 14 [--phase tournament] [--now <ISO>]`
+
+**Hand-off to 1.15.**
+Module 1.15 registers the World Championship context resolver with `resolvers.register('1.1', championshipResolver)`. The resolver must compute the active tournament phase (`pre_tournament`, `tournament`, `post_tournament`), populate `eventRefs` and `eventKey`. *Crucial contract:* 1.15 must update its phase in the database/resolver before emitting any event triggers for that phase, otherwise D12 will refuse the event as `trigger_not_configured`.
+
+**Not in 1.14.** Event detection and external provider polling (1.16). World Championship phase state machine (1.15). Moving created pending opportunities through research, generation and review (orchestrator 1.17: opportunities created in 1.14 remain in `pending`).
