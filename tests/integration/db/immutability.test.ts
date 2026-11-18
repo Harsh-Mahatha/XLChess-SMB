@@ -8,6 +8,9 @@ beforeAll(async () => {
   await db.query(
     "insert into smb.post_metrics (subject_type, metric, value) values ('system', 'seed_metric', 1)",
   );
+  await db.query(
+    "insert into smb.trigger_log (post_type_id, trigger_kind, outcome, reason) values ('1.1', 'schedule', 'created', 'seed')",
+  );
 });
 afterAll(async () => {
   await db.end();
@@ -88,6 +91,11 @@ const PROTECTED: [string, string, string][] = [
     'publications',
     `update smb.publications set content_hash = repeat('0', 64) where id = '${ID.publication}'`,
     `delete from smb.publications where id = '${ID.publication}'`,
+  ],
+  [
+    'trigger_log',
+    `update smb.trigger_log set outcome = 'error'`,
+    `delete from smb.trigger_log`,
   ],
 ];
 
