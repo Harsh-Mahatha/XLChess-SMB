@@ -233,6 +233,9 @@ export async function openOpportunityIn(
       priority,
       scheduledFor: scheduledFor.toISOString(),
       notAfter: notAfter ? notAfter.toISOString() : null,
+      ...(req.kind === 'schedule'
+        ? { lateBySeconds: Math.max(0, Math.floor((now.getTime() - req.slotAt.getTime()) / 1000)) }
+        : {}),
     },
   });
 
