@@ -223,6 +223,92 @@ registry.registerPath({
   responses: { 200: ok('Resolution recorded'), ...errors },
 });
 
+// Scheduling & Triggers (module 1.14). Admin-only routes.
+const ListSchedulesQuery = z.object({
+  postTypeId: z.string().optional(),
+});
+const SuspendScheduleBody = z.object({
+  postTypeId: z.string().min(1),
+  until: z.string().datetime().optional(),
+  reason: z.string().min(3).max(300),
+});
+const ResumeScheduleBody = z.object({
+  postTypeId: z.string().min(1),
+});
+const ListSchedulerLogQuery = z.object({
+  postTypeId: z.string().optional(),
+  outcome: z
+    .enum([
+      'created',
+      'duplicate',
+      'refused',
+      'missed_coalesced',
+      'missed_expired',
+      'rule_inactive',
+      'rule_active',
+      'error',
+    ])
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  before: z.string().datetime().optional(),
+});
+const CreateManualOpportunityBody = z.object({
+  postTypeId: z.string().min(1),
+  reason: z.string().min(3).max(300),
+  phase: z.string().min(1).optional(),
+  eventRefs: z.record(z.string(), z.string()).optional(),
+  gameRef: z.object({ sourceId: z.string(), externalId: z.string() }).optional(),
+  scheduledFor: z.string().datetime().optional(),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/v1/schedules',
+  summary: 'List recurring schedules and active holds',
+  security: secured,
+  request: { query: ListSchedulesQuery },
+  responses: { 200: ok('List of schedules and holds'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/schedules/suspend',
+  summary: 'Temporarily or indefinitely suspend recurring schedules for a post type',
+  security: secured,
+  request: { body: { content: { 'application/json': { schema: SuspendScheduleBody } } } },
+  responses: { 200: ok('Schedule suspended'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/schedules/resume',
+  summary: 'Resume recurring schedules for a post type',
+  security: secured,
+  request: { body: { content: { 'application/json': { schema: ResumeScheduleBody } } } },
+  responses: { 200: ok('Schedule resumed'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/scheduler/log',
+  summary: 'Query immutable scheduler trigger log entries',
+  security: secured,
+  request: { query: ListSchedulerLogQuery },
+  responses: { 200: ok('Trigger log entries'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/opportunities/manual',
+  summary: 'Create a manual posting opportunity',
+  security: secured,
+  request: {
+    headers: idempotency,
+    body: { content: { 'application/json': { schema: CreateManualOpportunityBody } } },
+  },
+  responses: {
+    200: ok('Duplicate opportunity returned'),
+    201: ok('Opportunity created'),
+    ...errors,
+  },
+});
+
 /** Route modules register their paths on `registry`; XLChess generates its typed client from this document. */
 export function buildOpenApiDocument(version: string) {
   return new OpenApiGeneratorV3(registry.definitions).generateDocument({
