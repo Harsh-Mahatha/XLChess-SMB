@@ -4,3 +4,4 @@ export * from './log.js';
 export * from './open.js';
 export * from './holds.js';
 export * from './tick.js';
+export * from './loop.js';

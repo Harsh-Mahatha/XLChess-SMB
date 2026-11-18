@@ -9,8 +9,18 @@ import { healthRouter } from './http/routes/health.js';
 import { reviewRouter, type ReviewRouteDeps } from './http/routes/review.js';
 import { publicationsRouter } from './http/routes/publications.js';
 import type { PublishDeps } from './publishing/service.js';
+import type { PrismaClient } from '@prisma/client';
+import type { TokenVerifier } from './auth/index.js';
+import type { ContextResolvers } from './scheduling/index.js';
 
 export const API_VERSION = '0.1.0';
+
+export interface SchedulingRouteDeps {
+  verifier?: TokenVerifier;
+  db: PrismaClient;
+  resolvers: ContextResolvers;
+  logger: Logger;
+}
 
 export interface AppDeps {
   env: Env;
@@ -19,6 +29,8 @@ export interface AppDeps {
   review?: ReviewRouteDeps;
   /** Publishing service deps. */
   publishing?: PublishDeps;
+  /** Scheduling route deps. */
+  scheduling?: SchedulingRouteDeps;
 }
 
 /**
@@ -27,7 +39,7 @@ export interface AppDeps {
  *   /v1/*        XLChess JWT   (review, admin)
  *   /worker/v1/* device token  (home-PC worker)
  */
-export function createApp({ env, logger, review, publishing }: AppDeps): Express {
+export function createApp({ env, logger, review, publishing, scheduling: _scheduling }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(pinoHttp({ logger }));

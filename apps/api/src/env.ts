@@ -25,6 +25,8 @@ const EnvSchema = z.object({
   SMB_CONTACT: z.string().optional(),
   /** Accept CC BY-SA photos (decision of 2026-11-13). Set to false to reject them. */
   IMAGE_ALLOW_SHARE_ALIKE: bool.default('true'),
+  SMB_SCHEDULER_ENABLED: bool.default('false'),
+  SMB_SCHEDULER_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
   X_API_BASE_URL: z.string().url().default('https://api.x.com'),
   X_API_KEY: z.string().optional(), // OAuth 1.0a consumer key
   X_API_SECRET: z.string().optional(), // consumer secret

@@ -21,7 +21,10 @@
     "assets:purge": "tsx --env-file-if-exists=../../.env src/assets/cli.ts purge",
     "graphics:render": "tsx --env-file-if-exists=../../.env src/graphics/cli.ts",
     "publish:due": "tsx --env-file-if-exists=../../.env src/publishing/cli.ts due",
-    "publish:one": "tsx --env-file-if-exists=../../.env src/publishing/cli.ts one"
+    "publish:one": "tsx --env-file-if-exists=../../.env src/publishing/cli.ts one",
+    "schedule:tick": "tsx --env-file-if-exists=../../.env src/scheduling/cli.ts tick",
+    "schedule:status": "tsx --env-file-if-exists=../../.env src/scheduling/cli.ts status",
+    "schedule:preview": "tsx --env-file-if-exists=../../.env src/scheduling/cli.ts preview"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.0",

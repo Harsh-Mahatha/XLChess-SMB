@@ -39,6 +39,9 @@
     "graphics:render": "npm run graphics:render -w @smb/api --",
     "publish:due": "npm run publish:due -w @smb/api --",
     "publish:one": "npm run publish:one -w @smb/api --",
+    "schedule:tick": "npm run schedule:tick -w @smb/api --",
+    "schedule:status": "npm run schedule:status -w @smb/api --",
+    "schedule:preview": "npm run schedule:preview -w @smb/api --",
     "installer:package": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/build-package.ps1",
     "installer:test": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Import-Module Pester; Invoke-Pester installer/tests\""
   },
