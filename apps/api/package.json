@@ -27,7 +27,10 @@
     "schedule:preview": "tsx --env-file-if-exists=../../.env src/scheduling/cli.ts preview",
     "championship:sync": "tsx --env-file-if-exists=../../.env src/championship/cli.ts sync",
     "championship:status": "tsx --env-file-if-exists=../../.env src/championship/cli.ts status",
-    "championship:register": "tsx --env-file-if-exists=../../.env src/championship/cli.ts register"
+    "championship:register": "tsx --env-file-if-exists=../../.env src/championship/cli.ts register",
+    "events:poll": "tsx --env-file-if-exists=../../.env src/events/cli.ts poll",
+    "events:status": "tsx --env-file-if-exists=../../.env src/events/cli.ts status",
+    "events:show": "tsx --env-file-if-exists=../../.env src/events/cli.ts show"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.0",

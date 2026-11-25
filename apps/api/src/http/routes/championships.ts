@@ -13,6 +13,7 @@ import {
 import { HttpError } from '../errors.js';
 import {
   AddTiebreakBody,
+  BindGameBody,
   ChampionshipError,
   ChampionshipIdParam,
   ConcludeCycleBody,
@@ -27,6 +28,7 @@ import {
 } from '../../championship/types.js';
 import {
   addTiebreakGame,
+  bindGame,
   concludeCycle,
   confirmGame,
   editCycle,
@@ -36,6 +38,8 @@ import {
   unlockCycle,
 } from '../../championship/service.js';
 import { syncChampionship } from '../../championship/sync.js';
+import { CHAMPIONSHIP_DETECTOR_ID } from '../../championship/emit.js';
+import { leaseHeld, runEventPoll, type DetectorRegistry } from '../../events/index.js';
 
 export interface ChampionshipRouteDeps {
   verifier?: TokenVerifier;
@@ -43,6 +47,8 @@ export interface ChampionshipRouteDeps {
   gateway?: SourceGateway;
   registry?: SourcesRegistry;
   resolvers?: ContextResolvers;
+  /** 1.16: when given, POST /sync runs through the events poller. */
+  detectors?: DetectorRegistry;
   logger: Logger;
   now?: () => Date;
 }
@@ -282,9 +288,46 @@ export function championshipsRouter(deps: ChampionshipRouteDeps): Router {
       }
     }
 
+    // 1.16: the recorded event behind each game, and the detector's health.
+    const [events, poller] = await Promise.all([
+      db.detected_events.findMany({
+        where: { identity_key: { in: games.map((g) => g.idempotency_key) } },
+        select: { id: true, identity_key: true, version: true, state: true },
+      }),
+      db.event_pollers.findUnique({ where: { detector_id: CHAMPIONSHIP_DETECTOR_ID } }),
+    ]);
+    const eventByKey = new Map(events.map((e) => [e.identity_key, e]));
+    for (const g of games) {
+      if (g.kind === 'tiebreak' && g.state === 'scheduled' && !g.d3_round_id && !g.d3_game_id) {
+        nextAction.push(`bind tiebreak ${g.game_number} to its D3 round before it starts`);
+      }
+    }
+
     res.json({
-      cycle: formatCycle(cycle),
-      games: games.map(formatGame),
+      cycle: {
+        ...formatCycle(cycle),
+        nextRoundAt: cycle.next_round_at?.toISOString() ?? null,
+        anyRoundLive: cycle.any_round_live,
+      },
+      poller: poller
+        ? {
+            enabled: poller.enabled,
+            nextDueAt: poller.next_due_at?.toISOString() ?? null,
+            lastRunAt: poller.last_run_at?.toISOString() ?? null,
+            lastSuccessAt: poller.last_success_at?.toISOString() ?? null,
+            lastOutcome: poller.last_outcome,
+            consecutiveFailures: poller.consecutive_failures,
+          }
+        : null,
+      games: games.map((g) => {
+        const e = eventByKey.get(g.idempotency_key);
+        return {
+          ...formatGame(g),
+          observedSources: g.observed_sources,
+          detectedEventId: e?.id ?? null,
+          eventVersion: e?.version ?? null,
+        };
+      }),
       score,
       openFlags: openFlags.map(formatFlag),
       log: logRows.map((l) => ({
@@ -327,6 +370,30 @@ export function championshipsRouter(deps: ChampionshipRouteDeps): Router {
       toHttpError(err);
     }
   });
+
+  // 5b. PATCH /v1/championships/:id/games/:kind/:number (1.16: bind to a D3 round or game)
+  router.patch(
+    '/v1/championships/:id/games/:kind/:number',
+    ...auth,
+    async (req: Request, res: Response) => {
+      const params = ConfirmGameParams.parse(req.params);
+      const body = BindGameBody.parse(req.body);
+      const actor = actorOf(res).userId;
+      try {
+        const game = await bindGame(
+          serviceDeps,
+          actor,
+          params.id,
+          params.kind,
+          params.number,
+          body,
+        );
+        res.json({ game: formatGame(game) });
+      } catch (err) {
+        toHttpError(err);
+      }
+    },
+  );
 
   // 6. POST /v1/championships/:id/games/:kind/:number/confirm
   router.post(
@@ -426,6 +493,23 @@ export function championshipsRouter(deps: ChampionshipRouteDeps): Router {
         'not_current_cycle',
         'Only the current championship cycle can be synced',
       );
+    }
+    // 1.16: through the events poller when it is wired, so the lease and poller health apply.
+    if (deps.detectors?.get(CHAMPIONSHIP_DETECTOR_ID)) {
+      const at = deps.now ? deps.now() : new Date();
+      if (await leaseHeld(db, CHAMPIONSHIP_DETECTOR_ID, at)) {
+        throw new HttpError(409, 'lease_held', 'A championship sync is already running');
+      }
+      const poll = await runEventPoll(
+        { db, detectors: deps.detectors, logger: deps.logger },
+        { now: at, only: CHAMPIONSHIP_DETECTOR_ID, force: true },
+      );
+      const result = poll.detectors[0]!;
+      if (result.outcome === 'lease_held') {
+        throw new HttpError(409, 'lease_held', 'A championship sync is already running');
+      }
+      res.json({ summary: result.summary, poll: result });
+      return;
     }
     const registry = deps.registry ?? loadConfigSet().sources;
     const gateway = deps.gateway ?? createSourceGateway(registry, new PrismaSourceRecordStore(db));

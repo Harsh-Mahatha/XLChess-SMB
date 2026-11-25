@@ -10,6 +10,7 @@ import { reviewRouter, type ReviewRouteDeps } from './http/routes/review.js';
 import { publicationsRouter } from './http/routes/publications.js';
 import { schedulingRouter, type SchedulingRouteDeps } from './http/routes/scheduling.js';
 import { championshipsRouter, type ChampionshipRouteDeps } from './http/routes/championships.js';
+import { eventsRouter, type EventsRouteDeps } from './http/routes/events.js';
 import type { PublishDeps } from './publishing/service.js';
 
 export const API_VERSION = '0.1.0';
@@ -25,6 +26,8 @@ export interface AppDeps {
   scheduling?: SchedulingRouteDeps;
   /** Championship lifecycle route deps. */
   championships?: ChampionshipRouteDeps;
+  /** Event ledger and detector routes (1.16). */
+  events?: EventsRouteDeps;
 }
 
 /**
@@ -40,6 +43,7 @@ export function createApp({
   publishing,
   scheduling,
   championships,
+  events,
 }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -62,6 +66,9 @@ export function createApp({
   }
   if (championships) {
     app.use(championshipsRouter(championships));
+  }
+  if (events) {
+    app.use(eventsRouter(events));
   }
 
   app.use(notFoundHandler);

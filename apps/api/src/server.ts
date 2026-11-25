@@ -2,14 +2,16 @@ import { createApp } from './app.js';
 import { verifierFromEnv } from './auth/index.js';
 import { loadConfigSet, syncConfigs, syncSources } from './config/index.js';
 import { getDb } from './db/client.js';
-import { loadEnv, xCredentialsFromEnv } from './env.js';
+import { eventsLoopSettings, loadEnv, xCredentialsFromEnv } from './env.js';
 import { createLogger } from './logger.js';
 import { SupabaseObjectStore } from './storage/index.js';
 import { XClient, XPublisher, type PublishDeps } from './publishing/index.js';
 import { ContextResolvers, runSchedulerTick, startLoop } from './scheduling/index.js';
-import { championshipResolver, syncChampionship } from './championship/index.js';
+import { championshipDetector, championshipResolver } from './championship/index.js';
+import { DetectorRegistry, runEventPoll } from './events/index.js';
 import { PrismaSourceRecordStore, createSourceGateway } from './sources/index.js';
 import type { ChampionshipRouteDeps } from './http/routes/championships.js';
+import type { EventsRouteDeps } from './http/routes/events.js';
 
 const env = loadEnv();
 const logger = createLogger(env);
@@ -63,8 +65,9 @@ let review;
 let publishing: PublishDeps | undefined;
 let scheduling;
 let championships: ChampionshipRouteDeps | undefined;
+let events: EventsRouteDeps | undefined;
 let schedulerLoop: { stop(): void } | undefined;
-let championshipLoop: { stop(): void } | undefined;
+let eventsLoop: { stop(): void } | undefined;
 if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   const db = await getDb();
   const store = new SupabaseObjectStore({
@@ -101,18 +104,29 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
       logger,
     });
   }
-  if (env.SMB_CHAMPIONSHIP_SYNC_ENABLED) {
-    championshipLoop = startLoop({
-      name: 'championship-sync',
-      intervalMs: env.SMB_CHAMPIONSHIP_SYNC_SECONDS * 1000,
-      run: () =>
-        syncChampionship({
-          db,
-          gateway: sourceGateway,
-          registry: configSet.sources,
-          resolvers,
-          logger,
-        }),
+  // 1.16: every event detector runs from one loop; each keeps its own cadence and backoff.
+  const detectors = new DetectorRegistry().register(
+    championshipDetector({
+      db,
+      gateway: sourceGateway,
+      registry: configSet.sources,
+      resolvers,
+      logger,
+      stabilitySeconds: env.SMB_EVENTS_STABILITY_SECONDS,
+    }),
+  );
+  const eventsSettings = eventsLoopSettings(env);
+  if (eventsSettings.deprecated.length > 0) {
+    logger.warn(
+      { deprecated: eventsSettings.deprecated },
+      'Deprecated environment variables in use: rename to SMB_EVENTS_ENABLED / SMB_EVENTS_TICK_SECONDS',
+    );
+  }
+  if (eventsSettings.enabled) {
+    eventsLoop = startLoop({
+      name: 'events',
+      intervalMs: eventsSettings.tickSeconds * 1000,
+      run: () => runEventPoll({ db, detectors, logger }),
       logger,
     });
   }
@@ -128,15 +142,17 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
     gateway: sourceGateway,
     registry: configSet.sources,
     resolvers,
+    detectors,
     logger,
   };
+  events = { verifier, db, detectors, logger };
 } else {
   logger.warn(
     'DATABASE_URL or Supabase settings missing: reviewer and publishing routes are not mounted',
   );
 }
 
-const app = createApp({ env, logger, review, publishing, scheduling, championships });
+const app = createApp({ env, logger, review, publishing, scheduling, championships, events });
 
 const server = app.listen(env.PORT, () => {
   logger.info(
@@ -155,8 +171,8 @@ function shutdown(signal: string): void {
   if (schedulerLoop) {
     schedulerLoop.stop();
   }
-  if (championshipLoop) {
-    championshipLoop.stop();
+  if (eventsLoop) {
+    eventsLoop.stop();
   }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();

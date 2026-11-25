@@ -23,6 +23,7 @@ import {
 } from '../publishing/schemas.js';
 import {
   AddTiebreakBody,
+  BindGameBody,
   ChampionshipIdParam,
   ConcludeCycleBody,
   ConfirmGameBody,
@@ -34,6 +35,12 @@ import {
   ResolveFlagBody,
   ResolveFlagParams,
 } from '../championship/types.js';
+import {
+  DetectorIdParam,
+  EventIdParam,
+  ListEventsQuery,
+  PatchDetectorBody,
+} from './routes/events.js';
 
 extendZodWithOpenApi(z);
 
@@ -428,6 +435,62 @@ registry.registerPath({
   security: secured,
   request: { params: ChampionshipIdParam },
   responses: { 200: ok('Sync completed'), ...errors },
+});
+registry.registerPath({
+  method: 'patch',
+  path: '/v1/championships/{id}/games/{kind}/{number}',
+  summary: 'Bind a championship game to its D3 round or game (needed for tiebreaks)',
+  security: secured,
+  request: {
+    params: ConfirmGameParams,
+    body: { content: { 'application/json': { schema: BindGameBody } } },
+  },
+  responses: { 200: ok('Game bound'), ...errors },
+});
+
+// Event detection and trigger ingestion (module 1.16). Admin-only routes.
+registry.registerPath({
+  method: 'get',
+  path: '/v1/events',
+  summary: 'List detected events (the event ledger), newest first',
+  security: secured,
+  request: { query: ListEventsQuery },
+  responses: { 200: ok('Detected events'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/events/{id}',
+  summary:
+    'Get a detected event with its payload, versions and opportunity (stale when built from an older version)',
+  security: secured,
+  request: { params: EventIdParam },
+  responses: { 200: ok('Detected event'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/event-pollers',
+  summary: 'List event detectors with health, backoff and next due time',
+  security: secured,
+  responses: { 200: ok('Event detectors'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/event-pollers/{id}/run',
+  summary: 'Run one event detector now',
+  security: secured,
+  request: { params: DetectorIdParam },
+  responses: { 200: ok('Detector run'), ...errors },
+});
+registry.registerPath({
+  method: 'patch',
+  path: '/v1/event-pollers/{id}',
+  summary: 'Pause or resume one event detector',
+  security: secured,
+  request: {
+    params: DetectorIdParam,
+    body: { content: { 'application/json': { schema: PatchDetectorBody } } },
+  },
+  responses: { 200: ok('Detector updated'), ...errors },
 });
 
 /** Route modules register their paths on `registry`; XLChess generates its typed client from this document. */

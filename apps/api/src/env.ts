@@ -27,8 +27,16 @@ const EnvSchema = z.object({
   IMAGE_ALLOW_SHARE_ALIKE: bool.default('true'),
   SMB_SCHEDULER_ENABLED: bool.default('false'),
   SMB_SCHEDULER_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
-  SMB_CHAMPIONSHIP_SYNC_ENABLED: bool.default('false'),
-  SMB_CHAMPIONSHIP_SYNC_SECONDS: z.coerce.number().int().min(15).max(600).default(60),
+  /** Runs the event detectors (1.16), including the World Championship feed sync. Off by default. */
+  SMB_EVENTS_ENABLED: bool.optional(),
+  /** How often the events loop checks which detectors are due. Each detector keeps its own cadence. */
+  SMB_EVENTS_TICK_SECONDS: z.coerce.number().int().min(10).max(600).optional(),
+  /** Two sources must agree on a game result for this long before it is corroborated (1.16 D7c). */
+  SMB_EVENTS_STABILITY_SECONDS: z.coerce.number().int().min(0).max(3600).default(120),
+  /** Deprecated in 1.16: use SMB_EVENTS_ENABLED. Still honoured when SMB_EVENTS_ENABLED is unset. */
+  SMB_CHAMPIONSHIP_SYNC_ENABLED: bool.optional(),
+  /** Deprecated in 1.16: use SMB_EVENTS_TICK_SECONDS. */
+  SMB_CHAMPIONSHIP_SYNC_SECONDS: z.coerce.number().int().min(10).max(600).optional(),
   X_API_BASE_URL: z.string().url().default('https://api.x.com'),
   X_API_KEY: z.string().optional(), // OAuth 1.0a consumer key
   X_API_SECRET: z.string().optional(), // consumer secret
@@ -60,6 +68,29 @@ export function xCredentialsFromEnv(env: Env): XCredentials | undefined {
     accessToken: env.X_ACCESS_TOKEN,
     accessTokenSecret: env.X_ACCESS_TOKEN_SECRET,
   };
+}
+
+export interface EventsLoopSettings {
+  enabled: boolean;
+  tickSeconds: number;
+  /** Deprecated variables that were used, for a startup warning. */
+  deprecated: string[];
+}
+
+/** Events loop settings, honouring the 1.15 variable names when the 1.16 ones are unset. */
+export function eventsLoopSettings(env: Env): EventsLoopSettings {
+  const deprecated: string[] = [];
+  let enabled = env.SMB_EVENTS_ENABLED;
+  if (enabled === undefined && env.SMB_CHAMPIONSHIP_SYNC_ENABLED !== undefined) {
+    enabled = env.SMB_CHAMPIONSHIP_SYNC_ENABLED;
+    deprecated.push('SMB_CHAMPIONSHIP_SYNC_ENABLED');
+  }
+  let tickSeconds = env.SMB_EVENTS_TICK_SECONDS;
+  if (tickSeconds === undefined && env.SMB_CHAMPIONSHIP_SYNC_SECONDS !== undefined) {
+    tickSeconds = env.SMB_CHAMPIONSHIP_SYNC_SECONDS;
+    deprecated.push('SMB_CHAMPIONSHIP_SYNC_SECONDS');
+  }
+  return { enabled: enabled ?? false, tickSeconds: tickSeconds ?? 30, deprecated };
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
