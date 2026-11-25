@@ -6,6 +6,7 @@ import { loadEnv, xCredentialsFromEnv } from './env.js';
 import { createLogger } from './logger.js';
 import { SupabaseObjectStore } from './storage/index.js';
 import { XClient, XPublisher, type PublishDeps } from './publishing/index.js';
+import { ContextResolvers, runSchedulerTick, startLoop } from './scheduling/index.js';
 
 const env = loadEnv();
 const logger = createLogger(env);
@@ -57,6 +58,8 @@ if (xCreds && env.X_USER_ID) {
 // The reviewer and publishing APIs need the database and Storage. Without them the server still starts (health only).
 let review;
 let publishing: PublishDeps | undefined;
+let scheduling;
+let schedulerLoop: { stop(): void } | undefined;
 if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   const db = await getDb();
   const store = new SupabaseObjectStore({
@@ -79,13 +82,29 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
     logger,
   };
   // 1.17: schedule publishDue(publishing, { limit: 10 });
+
+  const resolvers = new ContextResolvers();
+  if (env.SMB_SCHEDULER_ENABLED) {
+    schedulerLoop = startLoop({
+      name: 'scheduler',
+      intervalMs: env.SMB_SCHEDULER_INTERVAL_SECONDS * 1000,
+      run: () => runSchedulerTick({ db, resolvers, logger }),
+      logger,
+    });
+  }
+  scheduling = {
+    verifier,
+    db,
+    resolvers,
+    logger,
+  };
 } else {
   logger.warn(
     'DATABASE_URL or Supabase settings missing: reviewer and publishing routes are not mounted',
   );
 }
 
-const app = createApp({ env, logger, review, publishing });
+const app = createApp({ env, logger, review, publishing, scheduling });
 
 const server = app.listen(env.PORT, () => {
   logger.info(
@@ -101,6 +120,9 @@ const server = app.listen(env.PORT, () => {
 
 function shutdown(signal: string): void {
   logger.info({ signal }, 'shutting down');
+  if (schedulerLoop) {
+    schedulerLoop.stop();
+  }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }

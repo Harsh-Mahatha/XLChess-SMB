@@ -298,6 +298,47 @@ describe('jobs', () => {
   });
 });
 
+describe('schedules and triggers', () => {
+  it('requires an inactive_reason iff state is inactive', async () => {
+    const insert = (state: string, reason: string | null) =>
+      q(
+        `insert into smb.schedules (post_type_id, rule_key, rule, timezone, anchor_at, cursor_at, state, inactive_reason)
+         values ('1.1', $1, '{"kind":"weekly","day":"fri","time":"09:00"}', 'UTC', now(), now(), $2, $3)`,
+        [`rk-${state}-${reason ?? 'null'}`, state, reason],
+      );
+    await expect(insert('inactive', null)).rejects.toThrow(/check constraint/);
+    await expect(insert('active', 'suspended')).rejects.toThrow(/check constraint/);
+    await expect(insert('unknown_state', null)).rejects.toThrow(/check constraint/);
+    await expect(insert('inactive', 'unknown_reason')).rejects.toThrow(/check constraint/);
+    await insert('active', null);
+    await insert('inactive', 'suspended');
+  });
+
+  it('rejects duplicate schedule rule_key per post type', async () => {
+    await expect(
+      q(
+        `insert into smb.schedules (post_type_id, rule_key, rule, timezone, anchor_at, cursor_at, state)
+         values ('1.1', 'rk-active-null', '{"kind":"weekly","day":"fri","time":"09:00"}', 'UTC', now(), now(), 'active')`,
+      ),
+    ).rejects.toThrow(/duplicate key/);
+  });
+
+  it('validates trigger_log outcome and trigger_kind', async () => {
+    await expect(
+      q(
+        `insert into smb.trigger_log (post_type_id, trigger_kind, outcome, reason)
+         values ('1.1', 'invalid_kind', 'created', 'test')`,
+      ),
+    ).rejects.toThrow(/check constraint/);
+    await expect(
+      q(
+        `insert into smb.trigger_log (post_type_id, trigger_kind, outcome, reason)
+         values ('1.1', 'schedule', 'invalid_outcome', 'test')`,
+      ),
+    ).rejects.toThrow(/check constraint/);
+  });
+});
+
 describe('access', () => {
   it.each(['anon', 'authenticated'])('%s cannot read the smb schema', async (role) => {
     await q('begin');

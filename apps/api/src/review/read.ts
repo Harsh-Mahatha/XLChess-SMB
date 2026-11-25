@@ -199,6 +199,9 @@ export interface OpportunityDetail {
   status: string;
   priority: number;
   phase: string | null;
+  triggerKind: string;
+  triggerReason: string | null;
+  triggeredBy: string;
   scheduledFor: string | null;
   notAfter: string | null;
   generationCycle: number | null;
@@ -502,6 +505,9 @@ export async function opportunityDetail(
     status: opp.status,
     priority: opp.priority,
     phase: opp.phase,
+    triggerKind: opp.trigger_kind,
+    triggerReason: opp.trigger_reason,
+    triggeredBy: opp.triggered_by,
     scheduledFor: opp.scheduled_for?.toISOString() ?? null,
     notAfter: opp.not_after?.toISOString() ?? null,
     generationCycle: cycle,
