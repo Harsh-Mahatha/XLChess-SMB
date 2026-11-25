@@ -339,6 +339,55 @@ describe('schedules and triggers', () => {
   });
 });
 
+describe('championship lifecycle constraints', () => {
+  it('enforces forward-only phase transitions unless smb.phase_override = on', async () => {
+    const { rows: cycleRows } = await q(
+      `insert into smb.championship_cycles
+         (cycle_key, title, official_url, scheduled_start, scheduled_end, total_games, player_a, player_b, phase, created_by)
+       values ('wcc-constraint-test', 'WCC Constraint', 'https://fide.com/wcc', '2026-11-01T00:00:00Z', '2026-11-20T00:00:00Z', 14, '{"name":"A"}', '{"name":"B"}', 'tournament', 'admin')
+       returning id`,
+    );
+    const cycleId = cycleRows[0].id as string;
+
+    await expect(
+      q(`update smb.championship_cycles set phase = 'pre_tournament' where id = $1`, [cycleId]),
+    ).rejects.toThrow(/may not move backwards/);
+
+    await q('begin');
+    try {
+      await q(`select set_config('smb.phase_override', 'on', true)`);
+      await q(`update smb.championship_cycles set phase = 'pre_tournament' where id = $1`, [cycleId]);
+      await q('commit');
+    } catch (err) {
+      await q('rollback');
+      throw err;
+    }
+
+    // Confirmed check on championship_games
+    await expect(
+      q(
+        `insert into smb.championship_games (cycle_id, kind, game_number, idempotency_key, state, result)
+         values ($1, 'classical', 1, 'wcc-constraint-test:game-1:result', 'confirmed', '1-0')`,
+        [cycleId],
+      ),
+    ).rejects.toThrow(/check constraint/);
+
+    // One open flag per kind and game_number
+    await q(
+      `insert into smb.championship_flags (cycle_id, kind, severity, auto_clear, game_number, message)
+       values ($1, 'game_conflict', 'advisory', true, 1, 'first')`,
+      [cycleId],
+    );
+    await expect(
+      q(
+        `insert into smb.championship_flags (cycle_id, kind, severity, auto_clear, game_number, message)
+         values ($1, 'game_conflict', 'advisory', true, 1, 'second')`,
+        [cycleId],
+      ),
+    ).rejects.toThrow(/championship_flags_one_open/);
+  });
+});
+
 describe('access', () => {
   it.each(['anon', 'authenticated'])('%s cannot read the smb schema', async (role) => {
     await q('begin');

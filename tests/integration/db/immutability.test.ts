@@ -11,6 +11,15 @@ beforeAll(async () => {
   await db.query(
     "insert into smb.trigger_log (post_type_id, trigger_kind, outcome, reason) values ('1.1', 'schedule', 'created', 'seed')",
   );
+  const { rows } = await db.query(
+    `insert into smb.championship_cycles (cycle_key, title, official_url, scheduled_start, scheduled_end, total_games, player_a, player_b, created_by)
+     values ('wcc-immut-test', 'WCC Test', 'https://fide.com/wcc', '2026-11-01T00:00:00Z', '2026-11-20T00:00:00Z', 14, '{"name":"A"}', '{"name":"B"}', 'admin')
+     returning id`,
+  );
+  await db.query(
+    `insert into smb.championship_log (cycle_id, kind, actor, message) values ($1, 'registered', 'admin', 'seed')`,
+    [rows[0].id],
+  );
 });
 afterAll(async () => {
   await db.end();
@@ -96,6 +105,11 @@ const PROTECTED: [string, string, string][] = [
     'trigger_log',
     `update smb.trigger_log set outcome = 'error'`,
     `delete from smb.trigger_log`,
+  ],
+  [
+    'championship_log',
+    `update smb.championship_log set message = 'edited'`,
+    `delete from smb.championship_log`,
   ],
 ];
 
