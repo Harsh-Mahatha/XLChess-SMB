@@ -47,7 +47,8 @@ describe('source registry sync', () => {
       pgc,
       "select config from smb.data_sources where id = 'D1'",
     );
-    expect(fide!.config.capabilities).toEqual([]);
+    expect(fide!.config.policy.status).toBe('approved');
+    expect(fide!.config.capabilities).toEqual(['events', 'games', 'players', 'news']);
 
     const auditCount = async () =>
       Number(

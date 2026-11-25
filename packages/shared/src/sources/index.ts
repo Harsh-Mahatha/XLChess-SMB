@@ -148,6 +148,7 @@ export const PlayerQuery = z
   .object({
     fideId: z.string().min(1).optional(),
     name: z.string().min(1).optional(),
+    eventExternalId: z.string().min(1).optional(),
   })
   .strict();
 export type PlayerQuery = z.input<typeof PlayerQuery>;
@@ -165,7 +166,12 @@ export const GameQuery = z
   });
 export type GameQuery = z.input<typeof GameQuery>;
 
-export const NewsQuery = z.object({ limit: z.number().int().min(1).max(100).default(20) }).strict();
+export const NewsQuery = z
+  .object({
+    limit: z.number().int().min(1).max(100).default(20),
+    eventExternalId: z.string().min(1).optional(),
+  })
+  .strict();
 export type NewsQuery = z.input<typeof NewsQuery>;
 
 export interface CapabilityQuery {
