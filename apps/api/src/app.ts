@@ -9,6 +9,7 @@ import { healthRouter } from './http/routes/health.js';
 import { reviewRouter, type ReviewRouteDeps } from './http/routes/review.js';
 import { publicationsRouter } from './http/routes/publications.js';
 import { schedulingRouter, type SchedulingRouteDeps } from './http/routes/scheduling.js';
+import { championshipsRouter, type ChampionshipRouteDeps } from './http/routes/championships.js';
 import type { PublishDeps } from './publishing/service.js';
 
 export const API_VERSION = '0.1.0';
@@ -22,6 +23,8 @@ export interface AppDeps {
   publishing?: PublishDeps;
   /** Scheduling route deps. */
   scheduling?: SchedulingRouteDeps;
+  /** Championship lifecycle route deps. */
+  championships?: ChampionshipRouteDeps;
 }
 
 /**
@@ -30,7 +33,14 @@ export interface AppDeps {
  *   /v1/*        XLChess JWT   (review, admin)
  *   /worker/v1/* device token  (home-PC worker)
  */
-export function createApp({ env, logger, review, publishing, scheduling }: AppDeps): Express {
+export function createApp({
+  env,
+  logger,
+  review,
+  publishing,
+  scheduling,
+  championships,
+}: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(pinoHttp({ logger }));
@@ -49,6 +59,9 @@ export function createApp({ env, logger, review, publishing, scheduling }: AppDe
   }
   if (scheduling) {
     app.use(schedulingRouter(scheduling));
+  }
+  if (championships) {
+    app.use(championshipsRouter(championships));
   }
 
   app.use(notFoundHandler);

@@ -16,11 +16,12 @@ describe('api skeleton', () => {
     expect(body.publishMode).toBe('dry_run');
   });
 
-  it('serves an OpenAPI document that includes /health and /v1/publications', async () => {
+  it('serves an OpenAPI document that includes /health, /v1/publications, /v1/schedules, and /v1/championships', async () => {
     const res = await request(app).get('/v1/openapi.json').expect(200);
     expect(res.body.paths['/health']).toBeDefined();
     expect(res.body.paths['/v1/publications']).toBeDefined();
     expect(res.body.paths['/v1/schedules']).toBeDefined();
+    expect(res.body.paths['/v1/championships']).toBeDefined();
   });
 
   it('uses the standard error shape for unknown routes', async () => {
@@ -59,9 +60,36 @@ describe('scheduling router mounting', () => {
     const appWithSched = createApp({
       env,
       logger: createLogger(env),
-      scheduling: { verifier: fakeVerifier as any, db: {} as any, resolvers: {} as any, logger: createLogger(env) },
+      scheduling: {
+        verifier: fakeVerifier as any,
+        db: {} as any,
+        resolvers: {} as any,
+        logger: createLogger(env),
+      },
     });
     const res = await request(appWithSched).get('/v1/schedules').expect(401);
+    expect(res.body.error.code).toBe('invalid_token');
+  });
+});
+
+describe('championships router mounting', () => {
+  it('does not mount /v1/championships without championship deps (404)', async () => {
+    const res = await request(app).get('/v1/championships').expect(404);
+    expect(res.body.error.code).toBe('not_found');
+  });
+
+  it('answers 401 without a token when championship deps are mounted with a verifier', async () => {
+    const fakeVerifier = { verify: async () => ({ role: 'admin', userId: 'u1' }) };
+    const appWithChamp = createApp({
+      env,
+      logger: createLogger(env),
+      championships: {
+        verifier: fakeVerifier as any,
+        db: {} as any,
+        logger: createLogger(env),
+      },
+    });
+    const res = await request(appWithChamp).get('/v1/championships').expect(401);
     expect(res.body.error.code).toBe('invalid_token');
   });
 });

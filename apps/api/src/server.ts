@@ -7,6 +7,9 @@ import { createLogger } from './logger.js';
 import { SupabaseObjectStore } from './storage/index.js';
 import { XClient, XPublisher, type PublishDeps } from './publishing/index.js';
 import { ContextResolvers, runSchedulerTick, startLoop } from './scheduling/index.js';
+import { championshipResolver, syncChampionship } from './championship/index.js';
+import { PrismaSourceRecordStore, createSourceGateway } from './sources/index.js';
+import type { ChampionshipRouteDeps } from './http/routes/championships.js';
 
 const env = loadEnv();
 const logger = createLogger(env);
@@ -59,7 +62,9 @@ if (xCreds && env.X_USER_ID) {
 let review;
 let publishing: PublishDeps | undefined;
 let scheduling;
+let championships: ChampionshipRouteDeps | undefined;
 let schedulerLoop: { stop(): void } | undefined;
+let championshipLoop: { stop(): void } | undefined;
 if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   const db = await getDb();
   const store = new SupabaseObjectStore({
@@ -84,11 +89,30 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   // 1.17: schedule publishDue(publishing, { limit: 10 });
 
   const resolvers = new ContextResolvers();
+  resolvers.register('1.1', championshipResolver(db));
+
+  const sourceGateway = createSourceGateway(configSet.sources, new PrismaSourceRecordStore(db));
+
   if (env.SMB_SCHEDULER_ENABLED) {
     schedulerLoop = startLoop({
       name: 'scheduler',
       intervalMs: env.SMB_SCHEDULER_INTERVAL_SECONDS * 1000,
       run: () => runSchedulerTick({ db, resolvers, logger }),
+      logger,
+    });
+  }
+  if (env.SMB_CHAMPIONSHIP_SYNC_ENABLED) {
+    championshipLoop = startLoop({
+      name: 'championship-sync',
+      intervalMs: env.SMB_CHAMPIONSHIP_SYNC_SECONDS * 1000,
+      run: () =>
+        syncChampionship({
+          db,
+          gateway: sourceGateway,
+          registry: configSet.sources,
+          resolvers,
+          logger,
+        }),
       logger,
     });
   }
@@ -98,13 +122,21 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
     resolvers,
     logger,
   };
+  championships = {
+    verifier,
+    db,
+    gateway: sourceGateway,
+    registry: configSet.sources,
+    resolvers,
+    logger,
+  };
 } else {
   logger.warn(
     'DATABASE_URL or Supabase settings missing: reviewer and publishing routes are not mounted',
   );
 }
 
-const app = createApp({ env, logger, review, publishing, scheduling });
+const app = createApp({ env, logger, review, publishing, scheduling, championships });
 
 const server = app.listen(env.PORT, () => {
   logger.info(
@@ -122,6 +154,9 @@ function shutdown(signal: string): void {
   logger.info({ signal }, 'shutting down');
   if (schedulerLoop) {
     schedulerLoop.stop();
+  }
+  if (championshipLoop) {
+    championshipLoop.stop();
   }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();

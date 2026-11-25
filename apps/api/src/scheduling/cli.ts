@@ -6,6 +6,7 @@ import { loadEnv } from '../env.js';
 import { createLogger } from '../logger.js';
 import { ContextResolvers } from './context.js';
 import { runSchedulerTick } from './tick.js';
+import { championshipResolver } from '../championship/resolver.js';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -26,6 +27,7 @@ try {
   if (command === 'tick') {
     const now = values.now ? new Date(values.now) : new Date();
     const resolvers = new ContextResolvers();
+    resolvers.register('1.1', championshipResolver(db));
     const summary = await runSchedulerTick({ db, resolvers, logger }, { now });
     console.log(JSON.stringify(summary, null, 2));
   } else if (command === 'status') {
@@ -69,7 +71,9 @@ try {
   } else if (command === 'preview') {
     const postTypeId = values['post-type'];
     if (!postTypeId) {
-      console.error('Usage: schedule:preview --post-type <id> [--days 14] [--phase <phase>] [--now <ISO>]');
+      console.error(
+        'Usage: schedule:preview --post-type <id> [--days 14] [--phase <phase>] [--now <ISO>]',
+      );
       process.exit(1);
     }
 
@@ -90,7 +94,9 @@ try {
     const days = Number.parseInt(values.days ?? '14', 10);
     const horizon = new Date(now.getTime() + days * 86_400_000);
 
-    console.log(`Previewing slots for ${postTypeId} (phase: ${phase ?? 'base'}, tz: ${config.timezone})`);
+    console.log(
+      `Previewing slots for ${postTypeId} (phase: ${phase ?? 'base'}, tz: ${config.timezone})`,
+    );
     console.log(`Window: ${now.toISOString()} to ${horizon.toISOString()} (${days} days)\n`);
 
     const previewRows: { rule: string; slotUtc: string; slotLocal: string }[] = [];
@@ -98,7 +104,12 @@ try {
       const slots = occurrencesBetween(rule, config.timezone, now, horizon, now);
       for (const slot of slots) {
         previewRows.push({
-          rule: rule.kind === 'weekly' ? `${rule.day} ${rule.time}` : rule.kind === 'daily' ? `daily ${rule.time}` : `every ${rule.everyMinutes}m`,
+          rule:
+            rule.kind === 'weekly'
+              ? `${rule.day} ${rule.time}`
+              : rule.kind === 'daily'
+                ? `daily ${rule.time}`
+                : `every ${rule.everyMinutes}m`,
           slotUtc: slot.toISOString(),
           slotLocal: slot.toLocaleString('en-US', { timeZone: config.timezone }),
         });
