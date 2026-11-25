@@ -1,10 +1,11 @@
 import { Prisma } from '@prisma/client';
 import type { ChampionshipPhase, GameKind } from '@smb/shared';
-import { emitPendingGameEvents, type EmitSummary } from './emit.js';
+import { emitPendingGameEvents, recordCorrection, type EmitSummary } from './emit.js';
 import { openManualFlag } from './flags.js';
 import { writeChampionshipLog } from './log.js';
 import {
   AddTiebreakBody,
+  BindGameBody,
   ChampionshipError,
   ConcludeCycleBody,
   ConfirmGameBody,
@@ -13,6 +14,7 @@ import {
   RegisterCycleBody,
   ResolveFlagBody,
   type AddTiebreakInput,
+  type BindGameInput,
   type ChampionshipDeps,
   type ConcludeCycleInput,
   type ConfirmGameInput,
@@ -414,6 +416,93 @@ export async function addTiebreakGame(
   }
 }
 
+/**
+ * 1.16 D8: binds a championship game to a D3 round and/or game, so feed games that do not carry a
+ * plain classical round number (tiebreaks) are observed. A confirmed game's existing binding is
+ * changed only with `force` and a reason.
+ */
+export async function bindGame(
+  deps: ChampionshipDeps,
+  actor: string,
+  cycleId: string,
+  kind: GameKind,
+  number: number,
+  rawBody: BindGameInput,
+) {
+  const body = BindGameBody.parse(rawBody);
+  const now = deps.now ? deps.now() : new Date();
+
+  return deps.db.$transaction(async (tx) => {
+    const cycle = await tx.championship_cycles.findUnique({ where: { id: cycleId } });
+    if (!cycle) throw new ChampionshipError(404, 'not_found', 'Championship cycle not found');
+    await tx.$executeRaw`select pg_advisory_xact_lock(hashtext(${'smb.championship:' + cycle.cycle_key}))`;
+
+    const game = await tx.championship_games.findUnique({
+      where: { cycle_id_kind_game_number: { cycle_id: cycleId, kind, game_number: number } },
+    });
+    if (!game)
+      throw new ChampionshipError(404, 'game_not_found', `${kind} game ${number} not found`);
+
+    const hasBinding = game.d3_round_id !== null || game.d3_game_id !== null;
+    if (game.state === 'confirmed' && hasBinding && !body.force) {
+      throw new ChampionshipError(
+        409,
+        'game_confirmed',
+        `${kind} game ${number} is confirmed and already bound; pass force with a reason to change it`,
+      );
+    }
+
+    if (body.d3GameId) {
+      const clash = await tx.championship_games.findFirst({
+        where: { cycle_id: cycleId, d3_game_id: body.d3GameId, NOT: { id: game.id } },
+      });
+      if (clash) {
+        throw new ChampionshipError(
+          409,
+          'binding_in_use',
+          `D3 game ${body.d3GameId} is already bound to ${clash.kind} game ${clash.game_number}`,
+        );
+      }
+    }
+
+    const updated = await tx.championship_games.update({
+      where: { id: game.id },
+      data: {
+        ...(body.d3RoundId !== undefined ? { d3_round_id: body.d3RoundId } : {}),
+        ...(body.d3GameId !== undefined ? { d3_game_id: body.d3GameId } : {}),
+      },
+    });
+
+    const detail = {
+      kind,
+      gameNumber: number,
+      d3RoundId: updated.d3_round_id,
+      d3GameId: updated.d3_game_id,
+      previous: { d3RoundId: game.d3_round_id, d3GameId: game.d3_game_id },
+      force: body.force,
+      reason: body.reason ?? null,
+    };
+    await writeChampionshipLog(tx, {
+      cycleId,
+      kind: 'edited',
+      actor,
+      message: `Bound ${kind} game ${number} to D3 round ${updated.d3_round_id ?? '-'} / game ${updated.d3_game_id ?? '-'}`,
+      detail,
+      at: now,
+    });
+    await tx.audit_log.create({
+      data: {
+        actor,
+        action: 'championship.bind_game',
+        target_type: 'championship_game',
+        target_id: game.id,
+        details: { cycleId, ...detail },
+      },
+    });
+    return updated;
+  });
+}
+
 export async function confirmGame(
   deps: ChampionshipDeps,
   actor: string,
@@ -635,6 +724,39 @@ export async function confirmGame(
 
   let emit: EmitSummary | null = null;
   let finalGame = txResult.game;
+  let correctedEvents: { eventId: string; version: number }[] = [];
+  if (txResult.corrected) {
+    // 1.16 D6: the recorded event (and later events whose score changed) gets a new version.
+    correctedEvents = await recordCorrection(
+      { db: deps.db, now, logger: deps.logger },
+      cycleId,
+      { kind, number },
+      actor,
+      body.reason!,
+    );
+    const own = await deps.db.detected_events.findUnique({
+      where: { identity_key: txResult.game.idempotency_key },
+      select: { id: true, version: true },
+    });
+    if (own) {
+      const flag = await deps.db.championship_flags.findFirst({
+        where: { cycle_id: cycleId, kind: 'result_corrected', game_number: number, status: 'open' },
+      });
+      if (flag) {
+        await deps.db.championship_flags.update({
+          where: { id: flag.id },
+          data: {
+            detail: {
+              ...(flag.detail as Record<string, unknown>),
+              detectedEventId: own.id,
+              eventVersion: own.version,
+              recomputedEvents: correctedEvents,
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
+  }
   if (txResult.shouldEmit) {
     emit = await emitPendingGameEvents({ db: deps.db, now, logger: deps.logger }, cycleId);
     finalGame = await deps.db.championship_games.findUniqueOrThrow({
@@ -648,6 +770,7 @@ export async function confirmGame(
     corrected: txResult.corrected,
     noOp: txResult.noOp,
     emit,
+    correctedEvents,
   };
 }
 

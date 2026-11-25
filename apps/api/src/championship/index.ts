@@ -5,3 +5,5 @@ export * from './emit.js';
 export * from './service.js';
 export * from './sync.js';
 export * from './resolver.js';
+export * from './mapping.js';
+export * from './detector.js';

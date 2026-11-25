@@ -153,3 +153,21 @@ export const ListChampionshipsQuery = z.object({
     .transform((v) => v === 'true')
     .optional(),
 });
+
+/** 1.16 D8: bind a championship game to its D3 round or game (needed for tiebreaks). */
+export const BindGameBody = z
+  .object({
+    d3RoundId: z.string().trim().min(1).nullable().optional(),
+    d3GameId: z.string().trim().min(1).nullable().optional(),
+    force: z.boolean().default(false),
+    reason: z.string().trim().min(3).optional(),
+  })
+  .strict()
+  .refine((b) => b.d3RoundId !== undefined || b.d3GameId !== undefined, {
+    message: 'Give d3RoundId or d3GameId',
+  })
+  .refine((b) => !b.force || b.reason !== undefined, {
+    message: 'force needs a reason',
+    path: ['reason'],
+  });
+export type BindGameInput = z.input<typeof BindGameBody>;

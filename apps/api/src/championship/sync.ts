@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import {
   FEED_OUTAGE_ALERT_HOURS,
+  FLAG_KINDS,
   detectPhase,
   makeFlag,
   matchScore,
@@ -10,6 +11,7 @@ import {
   type ChessGame,
   type EventStatus,
   type FlagDraft,
+  type FlagKind,
   type GamePlayer,
   type SourceReliability,
   type Sourced,
@@ -25,6 +27,17 @@ import type { ContextResolvers } from '../scheduling/context.js';
 import { emitPendingGameEvents, type EmitSummary } from './emit.js';
 import { reconcileFlags } from './flags.js';
 import { writeChampionshipLog } from './log.js';
+import {
+  isSyncDue,
+  mapFeedGame,
+  mappedKey,
+  roundTiming,
+  roundsToFetch,
+  type MappedGame,
+} from './mapping.js';
+
+/** Default corroboration stability window (1.16 D7c). */
+export const DEFAULT_STABILITY_SECONDS = 120;
 
 export interface SyncDeps {
   db: PrismaClient;
@@ -32,6 +45,8 @@ export interface SyncDeps {
   registry?: SourcesRegistry;
   resolvers?: ContextResolvers;
   logger: Logger;
+  /** Two sources must agree for at least this long before a game is corroborated. Default 120. */
+  stabilitySeconds?: number;
 }
 
 export interface SyncSummary {
@@ -41,18 +56,17 @@ export interface SyncSummary {
   phase?: ChampionshipPhase;
   previousPhase?: ChampionshipPhase;
   lastSyncStatus: 'ok' | 'source_error' | 'not_due';
+  /** Provider calls that failed (a partial failure when lastSyncStatus is 'ok'). */
+  sourceErrors?: number;
+  /** Provider calls made. */
+  calls?: number;
   observedGames?: number;
   corroboratedGames?: number;
+  unmappedGames?: number;
   flagsOpened?: number;
   flagsCleared?: number;
   emit?: EmitSummary;
 }
-
-const CADENCE_MS = {
-  preFar: 60 * 60_000, // > 3 days before start: 60 min
-  preNear: 5 * 60_000, // <= 3 days before start: 5 min
-  tournament: 2 * 60_000, // during tournament: 2 min
-} as const;
 
 const STATUS_RANK: Record<EventStatus, number> = {
   upcoming: 1,
@@ -60,24 +74,8 @@ const STATUS_RANK: Record<EventStatus, number> = {
   completed: 3,
 };
 
-function isSyncDue(
-  phase: ChampionshipPhase,
-  scheduledStart: Date,
-  lastSyncedAt: Date | null,
-  now: Date,
-): boolean {
-  if (phase === 'post_tournament') return false;
-  if (!lastSyncedAt) return true;
-
-  let intervalMs: number;
-  if (phase === 'tournament') {
-    intervalMs = CADENCE_MS.tournament;
-  } else {
-    const msUntilStart = scheduledStart.getTime() - now.getTime();
-    intervalMs = msUntilStart <= 3 * 86_400_000 ? CADENCE_MS.preNear : CADENCE_MS.preFar;
-  }
-  return now.getTime() - lastSyncedAt.getTime() >= intervalMs;
-}
+/** Flags derived from feed games. They are kept, not cleared, when no games could be read. */
+const GAME_FLAG_KINDS: FlagKind[] = ['identity_mismatch', 'game_conflict', 'observation_changed'];
 
 function mostAdvancedStatus(events: Sourced<ChessEvent>[]): EventStatus | null {
   let best: EventStatus | null = null;
@@ -106,12 +104,16 @@ async function buildReliabilityLookup(
   return (id) => map.get(id) ?? 'structured_feed';
 }
 
+const label = (m: MappedGame) =>
+  m.kind === 'tiebreak' ? `Tiebreak ${m.number}` : `Game ${m.number}`;
+
 export async function syncChampionship(
   deps: SyncDeps,
   opts?: { now?: Date; force?: boolean },
 ): Promise<SyncSummary> {
   const now = opts?.now ?? new Date();
   const force = opts?.force ?? false;
+  const stabilityMs = (deps.stabilitySeconds ?? DEFAULT_STABILITY_SECONDS) * 1000;
 
   const cycle = await deps.db.championship_cycles.findFirst({
     where: { post_type_id: '1.1', is_current: true },
@@ -121,7 +123,11 @@ export async function syncChampionship(
   }
 
   const currentPhase = cycle.phase as ChampionshipPhase;
-  if (!force && !isSyncDue(currentPhase, cycle.scheduled_start, cycle.last_synced_at, now)) {
+  const timing = { nextRoundAt: cycle.next_round_at, anyRoundLive: cycle.any_round_live };
+  if (
+    !force &&
+    !isSyncDue(currentPhase, cycle.scheduled_start, cycle.last_synced_at, now, timing)
+  ) {
     await deps.db.championship_cycles.update({
       where: { id: cycle.id },
       data: { last_sync_status: 'not_due' },
@@ -133,6 +139,29 @@ export async function syncChampionship(
       phase: currentPhase,
       lastSyncStatus: 'not_due',
     };
+  }
+
+  // Rounds that must be re-read during the tournament even when not live (1.16 D9):
+  // rounds of unconfirmed observed games, and rounds behind open game flags.
+  const knownRows = await deps.db.championship_games.findMany({
+    where: { cycle_id: cycle.id },
+    select: { game_number: true, state: true, d3_round_id: true },
+  });
+  const openGameFlags = await deps.db.championship_flags.findMany({
+    where: { cycle_id: cycle.id, status: 'open', kind: { in: GAME_FLAG_KINDS } },
+    select: { game_number: true, detail: true },
+  });
+  const rereadRoundIds = new Set<string>();
+  for (const r of knownRows) {
+    if (r.d3_round_id && (r.state === 'in_progress' || r.state === 'result_observed')) {
+      rereadRoundIds.add(r.d3_round_id);
+    }
+  }
+  for (const f of openGameFlags) {
+    const roundId = (f.detail as { roundExternalId?: unknown } | null)?.roundExternalId;
+    if (typeof roundId === 'string') rereadRoundIds.add(roundId);
+    const row = knownRows.find((r) => r.game_number === f.game_number && r.d3_round_id);
+    if (row?.d3_round_id) rereadRoundIds.add(row.d3_round_id);
   }
 
   // 2. Fetch outside any long transaction (never D1).
@@ -148,31 +177,48 @@ export async function syncChampionship(
     [];
   let callsAttempted = 0;
   let callsSucceeded = 0;
+  let gamesCallsSucceeded = 0;
+
+  const fetchGames = async (sourceId: string, query: Record<string, string>) => {
+    callsAttempted++;
+    try {
+      const res = await deps.gateway.fetch(sourceId, 'games', query);
+      fetchedGames.push(...res.items);
+      callsSucceeded++;
+      gamesCallsSucceeded++;
+    } catch (err) {
+      if (!(err instanceof SourceError)) throw err;
+      sourceErrors.push({ sourceId, capability: 'games', code: err.code, message: err.message });
+    }
+  };
 
   for (const sourceId of sourceIds) {
     const ref = sourceRefs[sourceId]!;
     const caps = deps.gateway.capabilitiesOf(sourceId);
+    let event: ChessEvent | undefined;
     if (caps.includes('events')) {
       callsAttempted++;
       try {
         const res = await deps.gateway.fetch(sourceId, 'events', { externalId: ref });
         fetchedEvents.push(...res.items);
+        event = res.items[0]?.data;
         callsSucceeded++;
       } catch (err) {
         if (!(err instanceof SourceError)) throw err;
         sourceErrors.push({ sourceId, capability: 'events', code: err.code, message: err.message });
       }
     }
-    if (caps.includes('games')) {
-      callsAttempted++;
-      try {
-        const res = await deps.gateway.fetch(sourceId, 'games', { eventExternalId: ref });
-        fetchedGames.push(...res.items);
-        callsSucceeded++;
-      } catch (err) {
-        if (!(err instanceof SourceError)) throw err;
-        sourceErrors.push({ sourceId, capability: 'games', code: err.code, message: err.message });
+    if (!caps.includes('games')) continue;
+
+    // During the tournament, read only the rounds that matter (D9). Otherwise, or without a
+    // usable event, read the whole event.
+    if (currentPhase === 'tournament' && event && event.rounds.length > 0) {
+      const reread = sourceId === 'D3' ? rereadRoundIds : new Set<string>();
+      for (const roundId of roundsToFetch(event, now, reread)) {
+        await fetchGames(sourceId, { roundExternalId: roundId });
       }
+    } else {
+      await fetchGames(sourceId, { eventExternalId: ref });
     }
   }
 
@@ -218,13 +264,25 @@ export async function syncChampionship(
       cycleKey: cycle.cycle_key,
       phase: currentPhase,
       lastSyncStatus: 'source_error',
+      sourceErrors: sourceErrors.length,
+      calls: callsAttempted,
       flagsOpened: outageRes.opened,
       flagsCleared: outageRes.cleared,
     };
   }
 
+  // Per-round requests can return the same game twice: keep one record per source and game.
+  const uniqueGames = [
+    ...new Map(
+      fetchedGames.map((g) => [`${g.provenance.sourceId}:${g.data.externalId}`, g]),
+    ).values(),
+  ];
+
   const feedStatus = mostAdvancedStatus(fetchedEvents);
-  const feedOk = fetchedEvents.length > 0 || fetchedGames.length > 0;
+  const feedOk = fetchedEvents.length > 0 || uniqueGames.length > 0;
+  const primaryEvent =
+    fetchedEvents.find((e) => e.provenance.sourceId === 'D3')?.data ?? fetchedEvents[0]?.data;
+  const newTiming = primaryEvent ? roundTiming(primaryEvent, now) : timing;
 
   // 4. Identity check.
   const playerA = cycle.player_a as unknown as GamePlayer;
@@ -232,7 +290,7 @@ export async function syncChampionship(
   const directory = new PlayerDirectory([
     playerA,
     playerB,
-    ...fetchedGames.flatMap((g) => [g.data.white, g.data.black]),
+    ...uniqueGames.flatMap((g) => [g.data.white, g.data.black]),
   ]);
   const keyA = directory.keyOf(playerA);
   const keyB = directory.keyOf(playerB);
@@ -240,7 +298,7 @@ export async function syncChampionship(
   const validGames: Sourced<ChessGame>[] = [];
   const identityDrafts: FlagDraft[] = [];
 
-  for (const g of fetchedGames) {
+  for (const g of uniqueGames) {
     const wKey = directory.keyOf(g.data.white);
     const bKey = directory.keyOf(g.data.black);
     const matchesPlayers = (wKey === keyA && bKey === keyB) || (wKey === keyB && bKey === keyA);
@@ -256,6 +314,7 @@ export async function syncChampionship(
             detail: {
               sourceId: g.provenance.sourceId,
               round: g.data.round ?? null,
+              roundExternalId: g.data.roundExternalId ?? null,
               white: g.data.white,
               black: g.data.black,
             },
@@ -289,9 +348,7 @@ export async function syncChampionship(
       orderBy: [{ kind: 'asc' }, { game_number: 'asc' }],
     });
 
-    const classicalByNumber = new Map(
-      games.filter((g) => g.kind === 'classical').map((g) => [g.game_number, g]),
-    );
+    const rowsByKey = new Map(games.map((g) => [`${g.kind}:${g.game_number}`, g]));
 
     if (sourceErrors.length > 0) {
       await writeChampionshipLog(tx, {
@@ -306,35 +363,79 @@ export async function syncChampionship(
 
     let observedGames = 0;
     const conflictDrafts: FlagDraft[] = [];
+    const changedKeys = new Set<string>();
 
-    // Group valid games by classical game_number.
-    const validByNumber = new Map<number, Sourced<ChessGame>[]>();
+    // Map feed games to rows (D8). Unmapped games are logged once per cycle and never guessed.
+    const validByKey = new Map<string, { mapped: MappedGame; items: Sourced<ChessGame>[] }>();
+    const unmapped: Sourced<ChessGame>[] = [];
     for (const fg of validGames) {
-      const n = Number.parseInt(fg.data.round ?? '', 10);
-      if (!Number.isFinite(n) || n <= 0) continue;
-      validByNumber.set(n, [...(validByNumber.get(n) ?? []), fg]);
+      const mapped = mapFeedGame(fg.data, games);
+      if (!mapped) {
+        unmapped.push(fg);
+        continue;
+      }
+      const key = mappedKey(mapped);
+      const entry = validByKey.get(key) ?? { mapped, items: [] };
+      entry.items.push(fg);
+      validByKey.set(key, entry);
     }
 
-    for (const [gameNumber, feedItems] of validByNumber) {
-      const row = classicalByNumber.get(gameNumber);
+    let unmappedGames = 0;
+    if (unmapped.length > 0) {
+      const logged = await tx.championship_log.findMany({
+        where: { cycle_id: cycle.id, kind: 'unmapped_feed_game' },
+        select: { detail: true },
+      });
+      const seen = new Set(
+        logged.map((l) => {
+          const d = l.detail as { sourceId?: string; externalId?: string };
+          return `${d.sourceId}:${d.externalId}`;
+        }),
+      );
+      for (const fg of unmapped) {
+        const id = `${fg.provenance.sourceId}:${fg.data.externalId}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        unmappedGames++;
+        await writeChampionshipLog(tx, {
+          cycleId: cycle.id,
+          kind: 'unmapped_feed_game',
+          actor: 'system',
+          message: `Feed game ${fg.data.externalId} (round "${fg.data.round ?? ''}", ${fg.data.white.name} vs ${fg.data.black.name}) does not map to a championship game; bind it to a game if it belongs to the match`,
+          detail: {
+            sourceId: fg.provenance.sourceId,
+            externalId: fg.data.externalId,
+            round: fg.data.round ?? null,
+            roundExternalId: fg.data.roundExternalId ?? null,
+            result: fg.data.result,
+          },
+          at: now,
+        });
+      }
+    }
+
+    for (const [key, { mapped, items: feedItems }] of validByKey) {
+      const row = rowsByKey.get(key);
       if (!row) continue;
 
+      const finals = feedItems.filter((i) => i.data.result !== '*');
+
       if (row.state === 'confirmed') {
-        const mismatch = feedItems.find(
-          (fg) => fg.data.result !== '*' && fg.data.result !== row.result,
-        );
+        const mismatch = finals.find((fg) => fg.data.result !== row.result);
         if (mismatch) {
           conflictDrafts.push(
             makeFlag(
               'game_conflict',
-              `Game ${gameNumber}: feed ${mismatch.provenance.sourceId} reports ${mismatch.data.result} while confirmed result is ${row.result}`,
+              `${label(mapped)}: feed ${mismatch.provenance.sourceId} reports ${mismatch.data.result} while confirmed result is ${row.result}`,
               {
-                gameNumber,
+                gameNumber: mapped.number,
                 detail: {
-                  gameNumber,
+                  kind: mapped.kind,
+                  gameNumber: mapped.number,
                   confirmedResult: row.result,
                   feedResult: mismatch.data.result,
                   sourceId: mismatch.provenance.sourceId,
+                  roundExternalId: mismatch.data.roundExternalId ?? null,
                 },
               },
             ),
@@ -343,17 +444,116 @@ export async function syncChampionship(
         continue;
       }
 
-      // Prefer D3 for metadata / PGN, otherwise first item.
-      const primary = feedItems.find((i) => i.provenance.sourceId === 'D3') ?? feedItems[0]!;
+      const finalSources = [...new Set(finals.map((f) => f.provenance.sourceId))].sort();
+
+      if (row.state === 'result_observed') {
+        // D7a: an observed result is sticky. A feed showing the game unfinished again is logged once.
+        if (finals.length === 0) {
+          if (!row.feed_regressed_at) {
+            const updated = await tx.championship_games.update({
+              where: { id: row.id },
+              data: { feed_regressed_at: now },
+            });
+            rowsByKey.set(key, updated);
+            await writeChampionshipLog(tx, {
+              cycleId: cycle.id,
+              kind: 'feed_regressed_game',
+              actor: 'system',
+              message: `${label(mapped)}: feed shows the game unfinished again; keeping the observed result ${row.result}`,
+              detail: {
+                kind: mapped.kind,
+                gameNumber: mapped.number,
+                observedResult: row.result,
+                sources: [...new Set(feedItems.map((i) => i.provenance.sourceId))].sort(),
+              },
+              at: now,
+            });
+          }
+          continue;
+        }
+
+        // D7b: a feed reporting a different final result never overwrites the observation.
+        const disagreeing = finals.filter((f) => f.data.result !== row.result);
+        if (disagreeing.length > 0) {
+          changedKeys.add(key);
+          conflictDrafts.push(
+            makeFlag(
+              'observation_changed',
+              `${label(mapped)}: ${disagreeing.map((d) => `${d.provenance.sourceId} reports ${d.data.result}`).join(', ')} but ${row.result} was observed; confirm the official result`,
+              {
+                gameNumber: mapped.number,
+                detail: {
+                  kind: mapped.kind,
+                  gameNumber: mapped.number,
+                  observedResult: row.result,
+                  reports: disagreeing.map((d) => ({
+                    sourceId: d.provenance.sourceId,
+                    result: d.data.result,
+                  })),
+                  roundExternalId: disagreeing[0]!.data.roundExternalId ?? null,
+                },
+              },
+            ),
+          );
+          const updated = await tx.championship_games.update({
+            where: { id: row.id },
+            data: {
+              observed_result_since: now, // D7c: stability restarts after any disagreement
+              observed_sources: [...new Set([...row.observed_sources, ...finalSources])].sort(),
+              feed_regressed_at: null,
+            },
+          });
+          rowsByKey.set(key, updated);
+          continue;
+        }
+
+        // Feeds agree with the observation.
+        const updated = await tx.championship_games.update({
+          where: { id: row.id },
+          data: {
+            observed_sources: [...new Set([...row.observed_sources, ...finalSources])].sort(),
+            observed_result_since: row.observed_result_since ?? now,
+            feed_regressed_at: null,
+          },
+        });
+        rowsByKey.set(key, updated);
+        continue;
+      }
+
+      // scheduled or in_progress
       const d3Item = feedItems.find((i) => i.provenance.sourceId === 'D3');
+      const primary =
+        finals.find((i) => i.provenance.sourceId === 'D3') ?? finals[0] ?? d3Item ?? feedItems[0]!;
       const whitePlayer = directory.keyOf(primary.data.white) === keyA ? 'a' : 'b';
       const rMeta = primary.data.roundExternalId
         ? roundMetaById.get(primary.data.roundExternalId)
         : undefined;
 
-      const isFinal = primary.data.result !== '*';
-      const nextState = isFinal ? 'result_observed' : 'in_progress';
+      const isFinal = finals.length > 0;
       const nextResult = isFinal ? primary.data.result : null;
+      const disagreeing = finals.filter((f) => f.data.result !== nextResult);
+      if (disagreeing.length > 0) {
+        changedKeys.add(key);
+        conflictDrafts.push(
+          makeFlag(
+            'observation_changed',
+            `${label(mapped)}: feeds disagree on the result (${finals.map((f) => `${f.provenance.sourceId} ${f.data.result}`).join(', ')}); confirm the official result`,
+            {
+              gameNumber: mapped.number,
+              detail: {
+                kind: mapped.kind,
+                gameNumber: mapped.number,
+                observedResult: nextResult,
+                reports: finals.map((d) => ({
+                  sourceId: d.provenance.sourceId,
+                  result: d.data.result,
+                })),
+                roundExternalId: primary.data.roundExternalId ?? null,
+              },
+            },
+          ),
+        );
+      }
       const playedAt = primary.data.playedAt ? new Date(primary.data.playedAt) : row.played_at;
       const observedAt = isFinal ? (row.observed_at ?? now) : row.observed_at;
 
@@ -369,23 +569,32 @@ export async function syncChampionship(
           pgn: primary.data.pgn,
           played_at: playedAt,
           observed_at: observedAt,
-          state: nextState,
+          state: isFinal ? 'result_observed' : 'in_progress',
           result: nextResult,
+          ...(isFinal
+            ? {
+                observed_result_since: now,
+                observed_sources: finalSources,
+                feed_regressed_at: null,
+              }
+            : {}),
         },
       });
-      classicalByNumber.set(gameNumber, updated);
+      rowsByKey.set(key, updated);
 
-      if (isFinal && (row.state !== 'result_observed' || row.result !== nextResult)) {
+      if (isFinal) {
         observedGames++;
         await writeChampionshipLog(tx, {
           cycleId: cycle.id,
           kind: 'game_observed',
           actor: 'system',
-          message: `Game ${gameNumber} result observed: ${nextResult} (${primary.provenance.sourceId})`,
+          message: `${label(mapped)} result observed: ${nextResult} (${primary.provenance.sourceId})`,
           detail: {
-            gameNumber,
+            kind: mapped.kind,
+            gameNumber: mapped.number,
             result: nextResult,
             sourceId: primary.provenance.sourceId,
+            sources: finalSources,
             previousState: row.state,
             previousResult: row.result,
           },
@@ -394,15 +603,28 @@ export async function syncChampionship(
       }
     }
 
-    // 6. Corroboration (D3(b)): >= 2 independent non-D1 sources agreeing & valid PGN.
+    // 6. Corroboration (D3(b)): >= 2 independent non-D1 sources agreeing & valid PGN, stable for
+    // at least the stability window (1.16 D7c). Classical games only; tiebreaks need an administrator.
     let corroboratedGames = 0;
     const issues: { code: 'pgn_invalid' | 'result_mismatch'; url: string; detail: string }[] = [];
-    const assessed = assessGames(validGames, reliabilityOf, directory, issues);
+    const classicalFeed = [...validByKey.values()]
+      .filter((e) => e.mapped.kind === 'classical')
+      .flatMap((e) => e.items);
+    const assessed = assessGames(classicalFeed, reliabilityOf, directory, issues);
     for (const ag of assessed) {
       if (ag.roundNo === null) continue;
-      const row = classicalByNumber.get(ag.roundNo);
-      if (!row || row.state === 'confirmed') continue;
+      const key = `classical:${ag.roundNo}`;
+      const row = rowsByKey.get(key);
+      if (!row || row.state !== 'result_observed') continue;
+      if (changedKeys.has(key)) continue;
       if (ag.assessment.verification !== 'verified' || !ag.result || ag.result === '*') continue;
+      if (ag.result !== row.result) continue;
+      if (
+        !row.observed_result_since ||
+        now.getTime() - row.observed_result_since.getTime() < stabilityMs
+      ) {
+        continue;
+      }
 
       const distinctNonD1 = new Set(
         ag.records.map((r) => r.provenance.sourceId).filter((id) => id !== 'D1'),
@@ -419,7 +641,7 @@ export async function syncChampionship(
           confirmation_basis: 'corroborated',
         },
       });
-      classicalByNumber.set(ag.roundNo, updated);
+      rowsByKey.set(key, updated);
       corroboratedGames++;
 
       await writeChampionshipLog(tx, {
@@ -439,11 +661,10 @@ export async function syncChampionship(
     }
 
     // 7. Detect phase (at most 2 steps: pre -> tournament -> post).
-    const allRowsNow = [
-      ...classicalByNumber.values(),
-      ...games.filter((g) => g.kind === 'tiebreak'),
-    ];
-    const classicalRows = [...classicalByNumber.values()];
+    const allRowsNow = [...rowsByKey.values()];
+    const classicalRows = allRowsNow
+      .filter((g) => g.kind === 'classical')
+      .sort((a, b) => a.game_number - b.game_number);
     const classicalScore = matchScore(
       classicalRows.map((g) => ({
         kind: 'classical',
@@ -536,20 +757,25 @@ export async function syncChampionship(
         winner,
         last_synced_at: now,
         last_sync_status: 'ok',
+        next_round_at: newTiming.nextRoundAt,
+        any_round_live: newTiming.anyRoundLive,
         ...(feedOk ? { last_feed_ok_at: now } : {}),
         ...(feedStatus ? { last_feed_status: feedStatus } : {}),
       },
     });
 
-    // 8. Flags.
+    // 8. Flags. Game-derived flags are only re-evaluated when games could be read this sync.
     const allDrafts = [...identityDrafts, ...conflictDrafts, ...latestFlags];
-    const flagResult = await reconcileFlags(tx, cycle.id, allDrafts, now);
+    const onlyKinds =
+      gamesCallsSucceeded > 0 ? undefined : FLAG_KINDS.filter((k) => !GAME_FLAG_KINDS.includes(k));
+    const flagResult = await reconcileFlags(tx, cycle.id, allDrafts, now, onlyKinds);
 
     return {
       previousPhase: freshCycle.phase as ChampionshipPhase,
       phase: phaseCursor,
       observedGames,
       corroboratedGames,
+      unmappedGames,
       flagsOpened: flagResult.opened,
       flagsCleared: flagResult.cleared,
     };
@@ -564,8 +790,11 @@ export async function syncChampionship(
     previousPhase: txSummary.previousPhase,
     phase: txSummary.phase,
     lastSyncStatus: 'ok',
+    sourceErrors: sourceErrors.length,
+    calls: callsAttempted,
     observedGames: txSummary.observedGames,
     corroboratedGames: txSummary.corroboratedGames,
+    unmappedGames: txSummary.unmappedGames,
     flagsOpened: txSummary.flagsOpened,
     flagsCleared: txSummary.flagsCleared,
     emit,
