@@ -837,12 +837,12 @@ Phases map 1:1 to `1.1-world-championship.json`: `pre_tournament`, `tournament`,
 
 ### Confirmation, D1 official record, order, staleness and corrections
 - **D1 (`officialRecordAdapter`)**: operator-confirmed record stored in SMB and exposed as source **D1** (`reliability: official`, `access.method: manual`, `cacheTtlSeconds: 0`). Never scrapes FIDE. Serves `events`, `games` (confirmed games only), `players` (pre-round-1 `participants`), and `news` (`next_cycle.stage`).
-- **Two ways a game becomes `confirmed`**: (a) administrator confirmation with `attested: true` (`official_entry`), or (b) corroboration when at least two distinct non-D1 approved sources pass `assessGames` and agree on a final result (`corroborated`). A single feed (`D3` alone) only sets `result_observed` and never emits a post or satisfies `verified` research claims.
+- **Two ways a game becomes `confirmed`**: (a) administrator confirmation with `attested: true` (`official_entry`), or (b) corroboration when at least two distinct non-D1 approved sources pass `assessGames` and agree on a final result (`corroborated`). A single feed (`D3` alone) only sets `result_observed` and never emits a post or satisfies `verified` research claims. Since 1.16 the agreement must also be stable: the same result seen in syncs at least `SMB_EVENTS_STABILITY_SECONDS` (120 s) apart, with no source disagreeing in between. Corroboration covers classical games only; tiebreaks are confirmed by an administrator.
 - **Order (D9) and staleness (D8)**: `emitPendingGameEvents` holds confirmed games (`post_status = 'held'`) if any earlier classical game is unconfirmed, skips games older than `tournament.staleAfterMinutes` (360m, measured from `played_at` / `observed_at` / `confirmed_at`) as `stale_skipped`, and otherwise calls `openEventOpportunity` (`event: 'game_completed'`, `slot: 'game-<n>:result'`, `gameRef` pointing to D1). Any open `blocking` flag pauses emission and puts the `championshipResolver` on `hold`.
 - **Corrections (D10)**: re-confirming a confirmed game with a different result and a `reason` increments `result_version`, logs `game_corrected`, recomputes the score, and opens an advisory manual flag `result_corrected` recording the affected opportunity and whether any publication is `published`. Existing claims, opportunities and publications are never mutated.
 
 ### Cadence and background loop
-`syncChampionship` enforces polling intervals via `last_synced_at`: `pre_tournament` > 3 days out every 60 min, <= 3 days out every 5 min; `tournament` every 2 min; `post_tournament` never. Source outages never alter phase or game state. The loop (`SMB_CHAMPIONSHIP_SYNC_ENABLED=false`, beat `SMB_CHAMPIONSHIP_SYNC_SECONDS=60`) is started in `server.ts` and stopped on `SIGTERM`/`SIGINT`.
+`syncChampionship` enforces polling intervals via `last_synced_at`: `pre_tournament` > 3 days out every 60 min, <= 3 days out every 5 min; `tournament` every 2 min while a round is live, finished in the last 30 min, or starts within 30 min, otherwise every 15 min (1.16); `post_tournament` never. Source outages never alter phase or game state. Since 1.16 the sync runs as the event detector `championship:1.1` from the events loop (`SMB_EVENTS_ENABLED`), which adds a lease and backoff; see the 1.16 section below.
 
 ### Admin routes and CLI
 All `/v1/championships*` routes require an `admin` XLChess JWT and write `audit_log` on mutations:
@@ -854,21 +854,83 @@ All `/v1/championships*` routes require an `admin` XLChess JWT and write `audit_
 | `/v1/championships/:id` | GET | Cycle detail, games, confirmed score, open flags, recent log, and `nextAction` hints |
 | `/v1/championships/:id` | PATCH | Edit cycle fields (players in `pre_tournament` only; `nextCycle` in any phase) |
 | `/v1/championships/:id/games` | POST | Add a tiebreak game row during `tournament` |
+| `/v1/championships/:id/games/:kind/:number` | PATCH | Bind a game to its D3 round or game (`d3RoundId`, `d3GameId`; `force` + `reason` to rebind a confirmed game). Needed for tiebreaks (1.16) |
 | `/v1/championships/:id/games/:kind/:number/confirm` | POST | Confirm (`attested: true`) or correct (`reason` required) an official game result |
 | `/v1/championships/:id/conclude` | POST | Administrator conclusion (`winner`, `attested: true`, `note`) |
 | `/v1/championships/:id/phase` | POST | Force phase (`reason`, `lock`) |
 | `/v1/championships/:id/unlock` | POST | Remove phase lock |
 | `/v1/championships/:id/flags/:flagId/resolve` | POST | Resolve a manual flag (`note`) |
-| `/v1/championships/:id/sync` | POST | Force an immediate feed sync |
+| `/v1/championships/:id/sync` | POST | Force an immediate feed sync (through the events poller; 409 while a sync is running) |
 
 CLIs: `npm run championship:status`, `npm run championship:sync -- [--force]`, `npm run championship:register -- --file <json>`.
 
 ### Operating a championship (runbook)
 1. **Register**: call `POST /v1/championships` (or `npm run championship:register -- --file <json>`) with FIDE's official page URL, scheduled dates, players, classical `totalGames`, and `sourceEventRefs: { D3: "<broadcastId>" }`. Weekly `pre_tournament` posts begin on Fridays.
 2. **Monitor**: check `GET /v1/championships/:id` or `npm run championship:status`. When the match begins within 24h of `scheduledStart`, sync automatically moves to `tournament` and suspends the weekly rule.
-3. **Confirm games**: when D3 observes a finished game (`result_observed`), verify the result on the official FIDE page and confirm it via `POST /v1/championships/:id/games/classical/:n/confirm` with `attested: true`. The opportunity is emitted immediately.
+3. **Confirm games**: when D3 observes a finished game (`result_observed`), verify the result on the official FIDE page and confirm it via `POST /v1/championships/:id/games/classical/:n/confirm` with `attested: true`. The opportunity is emitted immediately. **Tiebreaks:** after adding a tiebreak row, bind it to its D3 round (`PATCH /v1/championships/:id/games/tiebreak/:n` with `{ "d3RoundId": "<roundId>" }`) before it starts; until then its feed game is logged once as `unmapped_feed_game` and never observed.
 4. **Conclude**: if all classical games are confirmed with a unique winner and D3 reports `completed`, the cycle transitions automatically to `post_tournament`. On an early clinch or tiebreak decision, call `POST /v1/championships/:id/conclude`.
 5. **Next cycle**: keep `nextCycle` updated via `PATCH /v1/championships/:id` for post-tournament weekly posts, then register the next championship when ready.
 
 **Not in 1.15.** Generic provider polling and event normalisation for other post types (1.16), opportunity workflow orchestration (1.17), and automated scraping/retrieval from FIDE.
+
+---
+
+## Event detection and trigger ingestion (module 1.16)
+
+Code: contracts in `packages/shared/src/events/` (`payloads.ts`, `identity.ts`, `backoff.ts`), the generic layer in `apps/api/src/events/` (`ingest.ts`, `poll.ts`, `registry.ts`, `types.ts`, `cli.ts`), the World Championship detector in `apps/api/src/championship/` (`detector.ts`, `mapping.ts`, changes to `sync.ts`, `emit.ts`, `service.ts`), routes in `apps/api/src/http/routes/events.ts`, migration `20261103002400_event_ingestion.sql`.
+
+### What happens
+1. **Detectors.** A detector watches approved sources for one post type and raises normalised events. V1 has one: `championship:1.1`, the 1.15 feed sync. All detectors run from one events loop (`runEventPoll`), each under a lease in `smb.event_pollers`, so two API instances never run the same detector at once.
+2. **Normalised events.** A confirmed championship game becomes a `GameCompletedEvent`. It carries everything the guide requires of a game-completion event: championship and game identifiers (`championship`, `game`, `identityKey`), both players, the official result, the match score after the game (`scoreAfter`), the completion timestamp, source references (D1 first, then the feeds that saw it) and the verification status (`official_entry` or `corroborated`).
+3. **Ledger.** `ingestEvent` is the only writer of `smb.detected_events`, one row per identity (`<cycle>:game-7:result`, equal to `championship_games.idempotency_key`):
+   - *New identity:* records version 1 and opens the `game_completed` opportunity **in the same transaction**, so a crash never leaves one without the other. The opportunity stores `trigger_event_id` and `trigger_event_version`.
+   - *Replay* (same material facts): counts it (`seen_count`, `last_seen_at`) and opens nothing. If the event has no opportunity yet (it was refused, for example because the post type was disabled), it tries again.
+   - *Correction* (different facts): only with a reason, from an administrator correcting a confirmed game. It adds a version (`smb.detected_event_versions`, append-only) and never opens a second opportunity.
+4. **Opportunities stay unique.** The dedupe keys are unchanged from 1.15 (`1.1:<cycle>:game-<n>:result`), so the database still guarantees one opportunity per game.
+
+### Decisions (D1 to D12)
+
+| Decision | Summary | Rationale |
+|---|---|---|
+| **D1: Ledger over 1.15** | `detected_events` records every event SMB acts on; `championship_games` keeps owning match state. The championship emitter builds a payload and calls `ingestEvent`. | Adds the normalised record and correction history without rewriting 1.15. Post types in 1.22 only need a detector and a payload. |
+| **D2: Poll only** | No push or streaming in V1. No approved provider offers webhooks; Lichess's streaming PGN gains nothing over a 2-minute poll within a 360-minute staleness budget, and adds reconnection and multi-instance problems. `mode: 'push'` is reserved. | Meets "use notifications where the provider supports them" with a recorded reason. |
+| **D3: Identity** | `<scope>:<subject>:<kind>`, reusing the 1.15 idempotency key. | No dedupe key changes. |
+| **D4: Replay vs correction** | Compared by `material_hash`: SHA-256 of canonical JSON over identity, result, players, score and verification. Timestamps and source URLs are volatile and excluded. | A re-read feed is never mistaken for a correction. |
+| **D5: Only the domain corrects** | A payload with different facts and no reason is refused (`EventIdentityConflict`). A feed contradicting a confirmed result raises `game_conflict` and changes nothing. | Only an authoritative path may change confirmed facts. |
+| **D6: Correction propagation** | Correcting game *n* versions its event and every later emitted event whose score changed. Opportunities keep the version they were built from; `trigger_event_version < detected_events.version` means the facts changed. The `result_corrected` flag records `detectedEventId`. | The guide: update the content record and flag published posts. Moving the opportunity is 1.17's job. |
+| **D7: Sticky, stable observations** | An observed result never goes back because the feed shows `*` (logged once as `feed_regressed_game`). A different final result keeps the first one and opens the advisory flag `observation_changed`. Corroboration needs the same result in syncs `SMB_EVENTS_STABILITY_SECONDS` apart. | A clock stop, broadcast interruption or temporary feed state cannot move or confirm a game. |
+| **D8: Explicit mapping** | A feed game maps to a row by its bound D3 game id, then its bound D3 round id (when only one row has it), then a round label `7` or `7.1` for classical games. Anything else (`7.2`, `Tiebreak 1`, blank) is logged once as `unmapped_feed_game` and never guessed. | Games are told apart from rounds; tiebreak formats vary, so an administrator binds them. |
+| **D9: Round-aware polling** | During the tournament, games are fetched per round, only for rounds that are live, finished within 30 min, bound to an unconfirmed game, or behind an open game flag (at most 6). Cadence: 2 min near live play, 15 min otherwise. | No games request on rest days. |
+| **D10: Backoff** | After a run in which every call failed: `cadence × 2^failures`, ±10% jitter, at most 10 min. A partial failure does not back off. Game flags are not cleared by a run that could read no games. | Bounded detection latency during an outage; health visible to operators. |
+| **D11: One loop** | `SMB_EVENTS_ENABLED` / `SMB_EVENTS_TICK_SECONDS` (default off, 30 s) replace `SMB_CHAMPIONSHIP_SYNC_*`, which still work with a startup warning. | One switch for all event polling. |
+| **D12: `game_completed` only** | Payload contracts exist for `round_completed`, `tournament_started` and `tournament_completed`, without detectors. `rating_list_published` and `news_published` wait for an approved source (1.22). | No V1 post type uses the others. |
+
+### Routes and CLI
+All routes require an `admin` XLChess JWT; mutations write `audit_log`.
+
+| Route | Method | Description |
+|---|---|---|
+| `/v1/events` | GET | The ledger, newest first. Filters: `postTypeId`, `kind`, `state`, `corrected`, `before`, `limit` (≤ 200) |
+| `/v1/events/:id` | GET | Payload, every version, and the linked opportunity with `stale: true` when it was built from an older version |
+| `/v1/event-pollers` | GET | Each detector: enabled, next due, last run and success, outcome, consecutive failures, last error, whether it is running |
+| `/v1/event-pollers/:id/run` | POST | Run one detector now (409 while it is running) |
+| `/v1/event-pollers/:id` | PATCH | `{ "enabled": false }` pauses one detector, independent of `SMB_EVENTS_ENABLED` |
+
+`GET /v1/championships/:id` also returns `poller`, `cycle.nextRoundAt`, `cycle.anyRoundLive`, and per game `observedSources`, `detectedEventId` and `eventVersion`.
+
+CLIs: `npm run events:poll -- [--only <detectorId>] [--force] [--now <ISO>]`, `npm run events:status`, `npm run events:show -- --identity <key> | --id <uuid>`.
+
+Environment: `SMB_EVENTS_ENABLED=false`, `SMB_EVENTS_TICK_SECONDS=30`, `SMB_EVENTS_STABILITY_SECONDS=120`.
+
+### Diagnosing a missing post
+1. `npm run events:status`: is the detector paused, backing off (`failures > 0`), or not due?
+2. `GET /v1/championships/:id`: is the game `result_observed` (needs confirmation), `held` (an earlier game is unconfirmed), `stale_skipped`, or blocked by a flag?
+3. `GET /v1/events?postTypeId=1.1`: is the event `refused`, and with which `refusalCode` (for example `post_type_disabled` or `trigger_not_configured`)? The next sync retries a refused event.
+4. Look for `unmapped_feed_game` in the championship log: the feed game may need a binding.
+
+### Hand-off to 1.17
+- An opportunity whose `trigger_event_version` is lower than its event's `version` was built from facts that have since changed: if it is not published yet, send it back to research; if it is published, the `result_corrected` flag already asks for review.
+- `event_pollers.consecutive_failures`, `last_success_at` and `last_error` are the inputs for source-health alerts (1.19).
+
+**Not in 1.16.** Push or streaming ingestion and provider webhooks (D2). Detectors for rounds, tournaments, rating lists and news (D12). Moving opportunities after a correction (1.17). Approving D2, D4 or D5 for automated retrieval (a terms question, not code). Conditional HTTP requests (ETag): Lichess support for broadcast PGN is not verified, and round-aware polling gives most of the saving.
 

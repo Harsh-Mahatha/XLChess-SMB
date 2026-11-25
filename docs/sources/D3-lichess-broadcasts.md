@@ -41,6 +41,12 @@ SMB uses `maxConcurrent: 1`, `minIntervalMs: 1000`, `rateLimitBackoffMs: 60000`,
 
 This is a broadcast feed run by the tournament organisers' relayers, so it can be corrected or briefly wrong during a live round. Results used in a post should be cross-checked against an official source (D1) once one is approved. Attribution is required when quoting or showing games.
 
+## How SMB polls it (module 1.16)
+
+- During a World Championship SMB reads `GET /api/broadcast/{tourId}` (cached for 5 minutes), then the round PGN `GET /api/broadcast/round/{roundId}.pgn` **only** for rounds that are live, finished within the last 30 minutes, or still hold an unconfirmed game. On rest days it makes no games request at all. It polls every 2 minutes near live play and every 15 minutes otherwise.
+- The streaming endpoint `GET /api/stream/broadcast/round/{roundId}.pgn` is deliberately not used: a 2-minute poll is well inside the 6-hour staleness budget, and a long-lived stream would add reconnection, partial-PGN and multi-instance handling.
+- A result shown by this feed alone is never published. It must be confirmed by an administrator or corroborated by a second approved source over two syncs. If the feed shows a finished game as unfinished again, or changes its result, SMB keeps the first observation and flags it.
+
 ## Open points
 
 - **Unauthenticated access may become restricted.** The public broadcast endpoints work without a token today (verified with real requests), but Lichess says unauthenticated endpoints may stop functioning. If that happens, register a personal API token, set `access.auth` to `token` in `config/sources.json` and send it from the adapter. Read-only public data should not need special scopes, but confirm this when it comes up.
