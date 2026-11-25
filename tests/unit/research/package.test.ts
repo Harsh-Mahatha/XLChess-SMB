@@ -314,13 +314,13 @@ describe('outages and missing information', () => {
     ]);
   });
 
-  it('a fact with no approved source is reported missing, never invented', () => {
+  it('a fact with no data retrieved is reported missing, never invented', () => {
     const p = run(gathered({ events: [event({ status: 'completed' })], games: [] }), [
       'next_cycle.stage',
       'event.name',
     ]);
     expect(p.summary.missing).toEqual([
-      expect.objectContaining({ fact: 'next_cycle.stage', reason: 'no_approved_source' }),
+      expect.objectContaining({ fact: 'next_cycle.stage', reason: 'no_data' }),
     ]);
     expect(p.status).toBe('partial');
   });
@@ -549,7 +549,7 @@ describe('the real World Championship post type (1.1)', () => {
     });
     expect(claim(p, 'event.outcome')?.verification).toBe('verified');
     expect(p.summary.missing).toEqual([
-      expect.objectContaining({ fact: 'next_cycle.stage', reason: 'no_approved_source' }),
+      expect.objectContaining({ fact: 'next_cycle.stage', reason: 'no_data' }),
     ]);
     expect(p.status).toBe('partial');
   });
@@ -575,7 +575,10 @@ describe('with real Lichess responses, through the gateway', () => {
     expect(g.attempted).toBe(2);
     expect(g.succeeded).toBe(2);
     expect(g.skipped.map((s) => s.sourceId).sort()).toEqual(['D1', 'D2', 'D4', 'D5']);
-    expect(g.skipped.every((s) => s.reason.includes('not approved'))).toBe(true);
+    expect(g.skipped.find((s) => s.sourceId === 'D1')?.reason).toContain('no event reference');
+    expect(
+      g.skipped.filter((s) => s.sourceId !== 'D1').every((s) => s.reason.includes('not approved')),
+    ).toBe(true);
     expect(g.failures).toEqual([]);
   });
 

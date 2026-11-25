@@ -1,6 +1,8 @@
 import type {
   ChessEvent,
   ChessGame,
+  ChessNews,
+  ChessPlayer,
   PackageSummary,
   ResearchSubject,
   SourceFailure,
@@ -17,6 +19,8 @@ export interface Gathered {
   attempted: number;
   succeeded: number;
   retrievedAt: string[];
+  players: Sourced<ChessPlayer>[];
+  news: Sourced<ChessNews>[];
 }
 
 /**
@@ -37,6 +41,8 @@ export async function gather(
     attempted: 0,
     succeeded: 0,
     retrievedAt: [],
+    players: [],
+    news: [],
   };
 
   async function call<T>(
@@ -79,6 +85,20 @@ export async function gather(
       out.games.push(
         ...(await call(sourceId, 'games', () =>
           gateway.fetch(sourceId, 'games', { eventExternalId: ref }),
+        )),
+      );
+    }
+    if (caps.includes('players')) {
+      out.players.push(
+        ...(await call(sourceId, 'players', () =>
+          gateway.fetch(sourceId, 'players', { eventExternalId: ref }),
+        )),
+      );
+    }
+    if (caps.includes('news')) {
+      out.news.push(
+        ...(await call(sourceId, 'news', () =>
+          gateway.fetch(sourceId, 'news', { eventExternalId: ref }),
         )),
       );
     }

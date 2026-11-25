@@ -113,6 +113,8 @@ export function gathered(p: Partial<Gathered> & Pick<Gathered, 'events' | 'games
     attempted: 1,
     succeeded: 1,
     retrievedAt: [NOW],
+    players: [],
+    news: [],
     ...p,
   };
 }
