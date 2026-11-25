@@ -420,7 +420,7 @@ Code: `apps/api/src/sources/`. Contracts (Zod): `packages/shared/src/sources/`. 
 
 **Adding a source:** read its API and terms, record the findings in `docs/sources/`, implement `ChessDataSource` for the capabilities it really supports, add it to `ADAPTERS` in `sources/index.ts`, then set `policy.status: approved`, `verifiedAt`, and its `capabilities` and `limits` in `config/sources.json`.
 
-Status in V1 core: **D3 Lichess Broadcasts** is live (events, games). D1, D2, D4 and D5 stay `pending_verification` with no capabilities.
+Status in V1 core: **D1 Official Record** (operator-confirmed DB record: events, games, players, news) and **D3 Lichess Broadcasts** (events, games) are approved. D2, D4 and D5 stay `pending_verification` with no capabilities.
 
 ---
 
@@ -461,7 +461,7 @@ Several records from one source count as one source. An official source can sett
 
 **Dev tool:** `npm run research:build -- --event <id> [--game <id>] [--phase tournament]` creates a manual opportunity and prints the package.
 
-**Known gaps:** `next_cycle.stage` has no approved source, so any phase requiring it stays `partial`. `participants` lists only players who have appeared in a retrieved game, so it is empty before round 1. Events are not matched across different sources yet; each source needs its own event reference in `eventRefs`.
+**Known gaps:** Events are not matched across different sources yet; each source needs its own event reference in `eventRefs`. (`participants` before round 1 and `next_cycle.stage` are now served from the operator-confirmed D1 record in module 1.15.)
 
 
 ---
@@ -811,4 +811,64 @@ Code: `packages/shared/src/schedule/` (`zone.ts`, `occurrences.ts`, `keys.ts`), 
 **Hand-off to 1.15.**
 Module 1.15 registers the World Championship context resolver with `resolvers.register('1.1', championshipResolver)`. The resolver must compute the active tournament phase (`pre_tournament`, `tournament`, `post_tournament`), populate `eventRefs` and `eventKey`. *Crucial contract:* 1.15 must update its phase in the database/resolver before emitting any event triggers for that phase, otherwise D12 will refuse the event as `trigger_not_configured`.
 
-**Not in 1.14.** Event detection and external provider polling (1.16). World Championship phase state machine (1.15). Moving created pending opportunities through research, generation and review (orchestrator 1.17: opportunities created in 1.14 remain in `pending`).
+**Not in 1.14.** Event detection and external provider polling (1.16). World Championship phase state machine (1.15, documented below). Moving created pending opportunities through research, generation and review (orchestrator 1.17: opportunities created in 1.14 remain in `pending`).
+
+---
+
+## World Championship lifecycle (module 1.15)
+
+Code: shared pure rules in `packages/shared/src/championship/` (`score.ts`, `phase.ts`, `flags.ts`), service/sync/emit/resolver/CLI in `apps/api/src/championship/`, official-record adapter in `apps/api/src/sources/official/adapter.ts`, routes in `apps/api/src/http/routes/championships.ts`, migration `20261103002300_championship_lifecycle.sql`.
+
+### Structured championship record
+Four tables in `smb` hold the single source of truth for PT 1.1 (`1.1-world-championship.json`):
+- `championship_cycles`: tournament identity (`cycle_key`), title, `official_url`, venue, scheduled/confirmed start and end dates, `total_games`, `player_a`/`player_b`, `source_event_refs`, `phase`, `phase_locked`, `is_current` (unique per `post_type_id` where `is_current`), `winner`, `next_cycle`, and sync timestamps.
+- `championship_games`: one row per classical game (`1..total_games`) plus optional `tiebreak` rows, with unique `idempotency_key` (`<cycle_key>:game-<n>:result` or `<cycle_key>:tiebreak-<n>:result`), state (`scheduled` → `in_progress` → `result_observed` → `confirmed`), `white_player`, `result`, `confirmation_basis` (`official_entry` or `corroborated`), `result_version`, `opportunity_id`, and `post_status` (`none`, `held`, `opportunity_created`, `stale_skipped`).
+- `championship_flags`: `blocking` or `advisory` flags; `auto_clear` flags clear automatically when the condition disappears, while manual flags (`result_corrected`) require an administrator note to resolve.
+- `championship_log`: append-only log (`smb.immutable_except()`) of registrations, edits, observations, confirmations, corrections, phase changes, flags, emissions and sync errors.
+
+### Phases, transitions and guard
+Phases map 1:1 to `1.1-world-championship.json`: `pre_tournament`, `tournament`, `post_tournament`.
+- **Forward-only automatic detection (`detectPhase`)**: calendar dates act only as sanity bounds, never triggers.
+  - `pre_tournament → tournament`: feed reports `in_progress`/`completed` (or any game is observed) AND `now >= scheduled_start - 24h`. Earlier starts raise `premature_start` (`blocking`); no start past `scheduled_start + 24h` while feed is healthy raises `late_start` (`blocking`).
+  - `tournament → post_tournament`: feed reports `completed` AND all classical games are confirmed AND `uniqueWinner(score)` is non-null. Missing confirmations raise `unconfirmed_games` (`advisory`); an early clinch raises `conclusion_unconfirmed` (`advisory`, awaiting `conclude`); a classical tie raises `no_unique_winner` (`advisory`); feed regression to `upcoming` raises `feed_regressed` (`blocking`); passing `scheduled_end + 48h` raises `overdue_conclusion` (`advisory`); feed outage > 6h raises `feed_unavailable` (`advisory`).
+  - `post_tournament`: never changes automatically; registering a subsequent championship moves `is_current` to the new record in `pre_tournament`.
+- **Database phase guard**: `smb.guard_championship_phase()` prevents backwards phase updates unless `smb.phase_override = 'on'` is set in the transaction by `forcePhase`.
+- **Phase lock**: `forcePhase(..., { lock: true })` stops automatic phase changes (sync still logs what it would have done) until `unlockCycle`.
+
+### Confirmation, D1 official record, order, staleness and corrections
+- **D1 (`officialRecordAdapter`)**: operator-confirmed record stored in SMB and exposed as source **D1** (`reliability: official`, `access.method: manual`, `cacheTtlSeconds: 0`). Never scrapes FIDE. Serves `events`, `games` (confirmed games only), `players` (pre-round-1 `participants`), and `news` (`next_cycle.stage`).
+- **Two ways a game becomes `confirmed`**: (a) administrator confirmation with `attested: true` (`official_entry`), or (b) corroboration when at least two distinct non-D1 approved sources pass `assessGames` and agree on a final result (`corroborated`). A single feed (`D3` alone) only sets `result_observed` and never emits a post or satisfies `verified` research claims.
+- **Order (D9) and staleness (D8)**: `emitPendingGameEvents` holds confirmed games (`post_status = 'held'`) if any earlier classical game is unconfirmed, skips games older than `tournament.staleAfterMinutes` (360m, measured from `played_at` / `observed_at` / `confirmed_at`) as `stale_skipped`, and otherwise calls `openEventOpportunity` (`event: 'game_completed'`, `slot: 'game-<n>:result'`, `gameRef` pointing to D1). Any open `blocking` flag pauses emission and puts the `championshipResolver` on `hold`.
+- **Corrections (D10)**: re-confirming a confirmed game with a different result and a `reason` increments `result_version`, logs `game_corrected`, recomputes the score, and opens an advisory manual flag `result_corrected` recording the affected opportunity and whether any publication is `published`. Existing claims, opportunities and publications are never mutated.
+
+### Cadence and background loop
+`syncChampionship` enforces polling intervals via `last_synced_at`: `pre_tournament` > 3 days out every 60 min, <= 3 days out every 5 min; `tournament` every 2 min; `post_tournament` never. Source outages never alter phase or game state. The loop (`SMB_CHAMPIONSHIP_SYNC_ENABLED=false`, beat `SMB_CHAMPIONSHIP_SYNC_SECONDS=60`) is started in `server.ts` and stopped on `SIGTERM`/`SIGINT`.
+
+### Admin routes and CLI
+All `/v1/championships*` routes require an `admin` XLChess JWT and write `audit_log` on mutations:
+
+| Route | Method | Description |
+|---|---|---|
+| `/v1/championships` | POST | Register a new championship cycle (409 if current cycle is not `post_tournament`) |
+| `/v1/championships` | GET | List championship cycles (`?current=true`) |
+| `/v1/championships/:id` | GET | Cycle detail, games, confirmed score, open flags, recent log, and `nextAction` hints |
+| `/v1/championships/:id` | PATCH | Edit cycle fields (players in `pre_tournament` only; `nextCycle` in any phase) |
+| `/v1/championships/:id/games` | POST | Add a tiebreak game row during `tournament` |
+| `/v1/championships/:id/games/:kind/:number/confirm` | POST | Confirm (`attested: true`) or correct (`reason` required) an official game result |
+| `/v1/championships/:id/conclude` | POST | Administrator conclusion (`winner`, `attested: true`, `note`) |
+| `/v1/championships/:id/phase` | POST | Force phase (`reason`, `lock`) |
+| `/v1/championships/:id/unlock` | POST | Remove phase lock |
+| `/v1/championships/:id/flags/:flagId/resolve` | POST | Resolve a manual flag (`note`) |
+| `/v1/championships/:id/sync` | POST | Force an immediate feed sync |
+
+CLIs: `npm run championship:status`, `npm run championship:sync -- [--force]`, `npm run championship:register -- --file <json>`.
+
+### Operating a championship (runbook)
+1. **Register**: call `POST /v1/championships` (or `npm run championship:register -- --file <json>`) with FIDE's official page URL, scheduled dates, players, classical `totalGames`, and `sourceEventRefs: { D3: "<broadcastId>" }`. Weekly `pre_tournament` posts begin on Fridays.
+2. **Monitor**: check `GET /v1/championships/:id` or `npm run championship:status`. When the match begins within 24h of `scheduledStart`, sync automatically moves to `tournament` and suspends the weekly rule.
+3. **Confirm games**: when D3 observes a finished game (`result_observed`), verify the result on the official FIDE page and confirm it via `POST /v1/championships/:id/games/classical/:n/confirm` with `attested: true`. The opportunity is emitted immediately.
+4. **Conclude**: if all classical games are confirmed with a unique winner and D3 reports `completed`, the cycle transitions automatically to `post_tournament`. On an early clinch or tiebreak decision, call `POST /v1/championships/:id/conclude`.
+5. **Next cycle**: keep `nextCycle` updated via `PATCH /v1/championships/:id` for post-tournament weekly posts, then register the next championship when ready.
+
+**Not in 1.15.** Generic provider polling and event normalisation for other post types (1.16), opportunity workflow orchestration (1.17), and automated scraping/retrieval from FIDE.
+
