@@ -30,6 +30,7 @@ export const FLAG_KINDS = [
   'overdue_conclusion',
   'game_conflict',
   'result_corrected',
+  'observation_changed',
 ] as const;
 export type FlagKind = (typeof FLAG_KINDS)[number];
 
@@ -56,6 +57,8 @@ export const FLAG_RULES: Record<FlagKind, { severity: FlagSeverity; autoClear: b
   overdue_conclusion: { severity: 'advisory', autoClear: true },
   game_conflict: { severity: 'advisory', autoClear: true },
   result_corrected: { severity: 'advisory', autoClear: false },
+  /** 1.16: a feed reported a different final result for an observed, unconfirmed game. */
+  observation_changed: { severity: 'advisory', autoClear: true },
 };
 
 export function makeFlag(
