@@ -121,7 +121,7 @@ describe('capability and policy enforcement', () => {
     expect(net.calls).toEqual([]);
   });
 
-  it.each(['D1', 'D2', 'D4', 'D5'])(
+  it.each(['D2', 'D4', 'D5'])(
     'refuses %s: not approved for automated retrieval',
     async (id) => {
       const { gateway, net } = makeGateway();
@@ -149,8 +149,9 @@ describe('capability and policy enforcement', () => {
 
   it('reports capabilities only for usable sources', () => {
     const { gateway } = makeGateway();
+    expect(gateway.capabilitiesOf('D1')).toEqual(['events', 'games', 'players', 'news']);
     expect(gateway.capabilitiesOf('D3')).toEqual(['events', 'games']);
-    expect(gateway.capabilitiesOf('D1')).toEqual([]);
+    expect(gateway.capabilitiesOf('D2')).toEqual([]);
     expect(gateway.capabilitiesOf('nope')).toEqual([]);
   });
 

@@ -1,6 +1,7 @@
 import type { SourcesRegistry } from '@smb/shared';
 import { SourceGateway } from './gateway.js';
 import { lichessAdapter } from './lichess/adapter.js';
+import { officialRecordAdapter } from './official/adapter.js';
 import type { SourceRecordStore } from './store.js';
 import type { ChessDataSource } from './types.js';
 
@@ -9,9 +10,10 @@ export * from './gateway.js';
 export * from './store.js';
 export * from './types.js';
 export { lichessAdapter } from './lichess/adapter.js';
+export { officialRecordAdapter } from './official/adapter.js';
 
 /** Every adapter that exists in code. Registering one here is not enough: config/sources.json must also approve it. */
-export const ADAPTERS: ChessDataSource[] = [lichessAdapter];
+export const ADAPTERS: ChessDataSource[] = [officialRecordAdapter(), lichessAdapter];
 
 export const USER_AGENT = 'XLChess-SMB/0.1 (chess news research bot)';
 

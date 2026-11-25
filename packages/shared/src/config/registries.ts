@@ -19,7 +19,7 @@ const Url = z.string().url();
 
 export const SourceAccess = z
   .object({
-    method: z.enum(['api', 'file_download', 'rss', 'none']),
+    method: z.enum(['api', 'file_download', 'rss', 'manual', 'none']),
     baseUrl: Url.optional(),
     auth: z.enum(['none', 'token']),
     termsUrl: Url.optional(),

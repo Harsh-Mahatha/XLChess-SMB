@@ -27,6 +27,8 @@ const EnvSchema = z.object({
   IMAGE_ALLOW_SHARE_ALIKE: bool.default('true'),
   SMB_SCHEDULER_ENABLED: bool.default('false'),
   SMB_SCHEDULER_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
+  SMB_CHAMPIONSHIP_SYNC_ENABLED: bool.default('false'),
+  SMB_CHAMPIONSHIP_SYNC_SECONDS: z.coerce.number().int().min(15).max(600).default(60),
   X_API_BASE_URL: z.string().url().default('https://api.x.com'),
   X_API_KEY: z.string().optional(), // OAuth 1.0a consumer key
   X_API_SECRET: z.string().optional(), // consumer secret

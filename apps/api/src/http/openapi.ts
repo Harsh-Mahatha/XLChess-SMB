@@ -21,6 +21,19 @@ import {
   ResolvePublicationBody,
   RetryPublicationBody,
 } from '../publishing/schemas.js';
+import {
+  AddTiebreakBody,
+  ChampionshipIdParam,
+  ConcludeCycleBody,
+  ConfirmGameBody,
+  ConfirmGameParams,
+  EditCycleBody,
+  ForcePhaseBody,
+  ListChampionshipsQuery,
+  RegisterCycleBody,
+  ResolveFlagBody,
+  ResolveFlagParams,
+} from '../championship/types.js';
 
 extendZodWithOpenApi(z);
 
@@ -307,6 +320,114 @@ registry.registerPath({
     201: ok('Opportunity created'),
     ...errors,
   },
+});
+
+// World Championship Lifecycle (module 1.15). Admin-only routes.
+registry.registerPath({
+  method: 'post',
+  path: '/v1/championships',
+  summary: 'Register a new World Championship cycle',
+  security: secured,
+  request: { body: { content: { 'application/json': { schema: RegisterCycleBody } } } },
+  responses: { 201: ok('Championship registered'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/championships',
+  summary: 'List championship cycles, newest first',
+  security: secured,
+  request: { query: ListChampionshipsQuery },
+  responses: { 200: ok('Championship cycles'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/championships/{id}',
+  summary: 'Get championship detail, games, confirmed score, open flags, log, and nextAction hints',
+  security: secured,
+  request: { params: ChampionshipIdParam },
+  responses: { 200: ok('Championship detail'), ...errors },
+});
+registry.registerPath({
+  method: 'patch',
+  path: '/v1/championships/{id}',
+  summary: 'Edit editable championship fields or next-cycle info',
+  security: secured,
+  request: {
+    params: ChampionshipIdParam,
+    body: { content: { 'application/json': { schema: EditCycleBody } } },
+  },
+  responses: { 200: ok('Championship updated'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/championships/{id}/games',
+  summary: 'Add a tiebreak game row during tournament phase',
+  security: secured,
+  request: {
+    params: ChampionshipIdParam,
+    body: { content: { 'application/json': { schema: AddTiebreakBody } } },
+  },
+  responses: { 201: ok('Tiebreak game added'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/championships/{id}/games/{kind}/{number}/confirm',
+  summary: 'Confirm or correct an official game result (requires attested: true)',
+  security: secured,
+  request: {
+    params: ConfirmGameParams,
+    body: { content: { 'application/json': { schema: ConfirmGameBody } } },
+  },
+  responses: { 200: ok('Game confirmed or corrected'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/championships/{id}/conclude',
+  summary: 'Conclude a championship cycle after an early clinch or tiebreak decision',
+  security: secured,
+  request: {
+    params: ChampionshipIdParam,
+    body: { content: { 'application/json': { schema: ConcludeCycleBody } } },
+  },
+  responses: { 200: ok('Championship concluded'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/championships/{id}/phase',
+  summary: 'Force a championship phase transition (and optionally lock phase detection)',
+  security: secured,
+  request: {
+    params: ChampionshipIdParam,
+    body: { content: { 'application/json': { schema: ForcePhaseBody } } },
+  },
+  responses: { 200: ok('Phase forced'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/championships/{id}/unlock',
+  summary: 'Remove the phase lock from a championship cycle',
+  security: secured,
+  request: { params: ChampionshipIdParam },
+  responses: { 200: ok('Phase unlocked'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/championships/{id}/flags/{flagId}/resolve',
+  summary: 'Resolve a manual-resolution championship flag',
+  security: secured,
+  request: {
+    params: ResolveFlagParams,
+    body: { content: { 'application/json': { schema: ResolveFlagBody } } },
+  },
+  responses: { 200: ok('Flag resolved'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/championships/{id}/sync',
+  summary: 'Force an immediate feed sync for the current championship cycle',
+  security: secured,
+  request: { params: ChampionshipIdParam },
+  responses: { 200: ok('Sync completed'), ...errors },
 });
 
 /** Route modules register their paths on `registry`; XLChess generates its typed client from this document. */

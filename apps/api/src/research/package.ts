@@ -35,6 +35,8 @@ export function researchFromGathered(g: Gathered, input: ResearchInput): Assembl
     requiredFacts: input.requiredFacts,
     events: g.events,
     games: g.games,
+    players: g.players,
+    news: g.news,
     failures: g.failures,
     reliabilityOf: input.reliabilityOf,
   });

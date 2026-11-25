@@ -4,6 +4,8 @@ import {
   weakestVerification,
   type ChessEvent,
   type ChessGame,
+  type ChessNews,
+  type ChessPlayer,
   type ClaimDraft,
   type ClaimVerification,
   type ConflictNote,
@@ -24,6 +26,8 @@ export interface ClaimInput {
   requiredFacts: string[];
   events: Sourced<ChessEvent>[];
   games: Sourced<ChessGame>[];
+  players?: Sourced<ChessPlayer>[];
+  news?: Sourced<ChessNews>[];
   failures: SourceFailure[];
   reliabilityOf: (sourceId: string) => SourceReliability;
 }
@@ -43,9 +47,14 @@ const day = (iso: string | undefined): string => (iso ? iso.slice(0, 10) : '');
 /** Builds one claim per required fact, or says exactly why it could not. Never guesses a value. */
 export function buildClaims(input: ClaimInput): ClaimOutput {
   const { events, games, failures, reliabilityOf } = input;
+  const players = input.players ?? [];
+  const news = input.news ?? [];
   const issues: PackageIssue[] = [];
   const conflicts: ConflictNote[] = [];
-  const directory = new PlayerDirectory(games.flatMap((g) => [g.data.white, g.data.black]));
+  const directory = new PlayerDirectory([
+    ...games.flatMap((g) => [g.data.white, g.data.black]),
+    ...players.map((p) => p.data),
+  ]);
   const assessed = assessGames(games, reliabilityOf, directory, issues);
   const nameOf = (key: string): string => directory.person(key).name;
 
@@ -172,13 +181,18 @@ export function buildClaims(input: ClaimInput): ClaimOutput {
       ),
 
     participants: () => {
-      if (games.length === 0) return noData('participants', 'no games retrieved yet');
-      const o = games.map((g) =>
-        obs(
-          g,
-          [g.data.white, g.data.black].map((p) => directory.keyOf(p)),
+      if (games.length === 0 && players.length === 0) {
+        return noData('participants', 'no games or player records retrieved yet');
+      }
+      const o = [
+        ...games.map((g) =>
+          obs(
+            g,
+            [g.data.white, g.data.black].map((p) => directory.keyOf(p)),
+          ),
         ),
-      );
+        ...players.map((p) => obs(p, [directory.keyOf(p.data)])),
+      ];
       // One value per source: the set of players that source has seen.
       const perSource = new Map<string, Set<string>>();
       for (const x of o) {
@@ -196,7 +210,7 @@ export function buildClaims(input: ClaimInput): ClaimOutput {
       }));
       return claim('participants', a, value, {
         computation:
-          'distinct players across all retrieved games, merged by FIDE id or normalised name',
+          'distinct players across all retrieved games and player records, merged by FIDE id or normalised name',
       });
     },
 
@@ -287,6 +301,7 @@ export function buildClaims(input: ClaimInput): ClaimOutput {
           confidence: Math.min(t.confidence, rem.confidence),
           recordIds: [...new Set([...t.recordIds, ...rem.recordIds])],
           payloadHashes: [...new Set([...t.payloadHashes, ...rem.payloadHashes])],
+          ...(rem.conflict ? { conflict: rem.conflict } : {}),
         },
         {
           leader: lead ? nameOf(lead.key) : null,
@@ -373,13 +388,26 @@ export function buildClaims(input: ClaimInput): ClaimOutput {
       );
     },
 
-    'next_cycle.stage': () => ({
-      missing: {
-        fact: 'next_cycle.stage',
-        reason: 'no_approved_source',
-        detail: 'no approved source provides qualification-cycle information',
-      },
-    }),
+    'next_cycle.stage': () => {
+      if (news.length === 0) {
+        return noData('next_cycle.stage', 'no next-cycle information retrieved');
+      }
+      const o = news.map((n) =>
+        obs(n, {
+          stage: n.data.title,
+          ...(n.data.summary !== undefined ? { summary: n.data.summary } : {}),
+          url: n.data.url,
+        }),
+      );
+      const a = assess(o, (v) => text((v as { stage: string }).stage));
+      const matched =
+        a.verification !== 'conflicting'
+          ? news.find((n) => text(n.data.title) === text((a.value as { stage: string }).stage))
+          : undefined;
+      return claim('next_cycle.stage', a, a.value, {
+        ...(matched ? { eventTime: matched.data.publishedAt } : {}),
+      });
+    },
   };
 
   const claims: ClaimDraft[] = [];

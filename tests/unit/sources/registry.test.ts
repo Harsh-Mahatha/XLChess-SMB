@@ -6,13 +6,19 @@ const base = () => structuredClone(loadConfigSet().sources) as any; // eslint-di
 const d = (r: any, id: string) => r.sources.find((s: any) => s.id === id); // eslint-disable-line @typescript-eslint/no-explicit-any
 
 describe('source registry (config/sources.json)', () => {
-  it('approves Lichess only; the other data sources fail closed', () => {
+  it('approves D1 (official manual record) and D3 (Lichess); other data sources fail closed', () => {
     const { sources } = loadConfigSet().sources;
     const data = sources.filter((s) => s.kind === 'data');
     expect(data.map((s) => s.id)).toEqual(['D1', 'D2', 'D3', 'D4', 'D5']);
     for (const s of data) {
       if (s.kind !== 'data') continue;
-      if (s.id === 'D3') {
+      if (s.id === 'D1') {
+        expect(s.policy.status).toBe('approved');
+        expect(s.policy.automatedRetrieval).toBe(true);
+        expect(s.access.method).toBe('manual');
+        expect(s.capabilities).toEqual(['events', 'games', 'players', 'news']);
+        expect(s.reliability).toBe('official');
+      } else if (s.id === 'D3') {
         expect(s.policy.status).toBe('approved');
         expect(s.capabilities).toEqual(['events', 'games']);
         expect(s.reliability).toBe('structured_feed');
@@ -44,8 +50,13 @@ describe('source registry (config/sources.json)', () => {
   const bad: [string, (r: any) => void, RegExp][] = [
     [
       'capabilities on an unapproved source',
-      (r) => (d(r, 'D1').capabilities = ['players']),
+      (r) => (d(r, 'D2').capabilities = ['players']),
       /capabilities require policy.status/,
+    ],
+    [
+      'D1 with automatedRetrieval false and capabilities',
+      (r) => (d(r, 'D1').policy.automatedRetrieval = false),
+      /capabilities require policy.automatedRetrieval/,
     ],
     [
       'automated retrieval without approval',

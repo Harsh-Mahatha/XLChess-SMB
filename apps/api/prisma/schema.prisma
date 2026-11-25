@@ -264,6 +264,7 @@ model post_opportunities {
   updated_at         DateTime             @default(now()) @db.Timestamptz(6)
   trigger_reason     String?
   triggered_by       String               @default("system")
+  championship_games championship_games[]
   image_candidates   image_candidates[]
   jobs               jobs[]
   media_assets       media_assets[]
@@ -273,8 +274,8 @@ model post_opportunities {
   post_types         post_types           @relation(fields: [post_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   research_packages  research_packages[]
   review_actions     review_actions[]
-  story_selections   story_selections[]
   schedules          schedules[]
+  story_selections   story_selections[]
   trigger_log        trigger_log[]
 
   @@index([status, scheduled_for], map: "post_opportunities_status")
@@ -320,17 +321,18 @@ model post_revisions {
 }
 
 model post_types {
-  id                 String               @id
-  name               String
-  description        String?
-  enabled            Boolean              @default(true)
-  created_at         DateTime             @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
-  post_configs       post_configs[]
-  post_opportunities post_opportunities[]
-  schedule_holds     schedule_holds?
-  schedules          schedules[]
-  trigger_log        trigger_log[]
+  id                  String                @id
+  name                String
+  description         String?
+  enabled             Boolean               @default(true)
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  championship_cycles championship_cycles[]
+  post_configs        post_configs[]
+  post_opportunities  post_opportunities[]
+  schedule_holds      schedule_holds?
+  schedules           schedules[]
+  trigger_log         trigger_log[]
 
   @@schema("smb")
 }
@@ -544,7 +546,6 @@ model story_selections {
   research_packages   research_packages  @relation(fields: [research_package_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   review_actions      review_actions?    @relation(fields: [review_action_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([created_at(sort: Desc)], map: "story_selections_recent")
   @@schema("smb")
 }
 
@@ -665,7 +666,6 @@ model schedules {
   post_types          post_types          @relation(fields: [post_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([post_type_id, rule_key])
-  @@index([next_run_at], map: "schedules_next_run")
   @@schema("smb")
 }
 
@@ -698,6 +698,112 @@ model trigger_log {
 
   @@index([post_type_id, at(sort: Desc)], map: "trigger_log_type_time")
   @@index([opportunity_id], map: "trigger_log_opportunity")
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model championship_cycles {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  post_type_id       String               @default("1.1")
+  cycle_key          String               @unique
+  title              String
+  official_url       String
+  venue              String?
+  scheduled_start    DateTime             @db.Timestamptz(6)
+  scheduled_end      DateTime             @db.Timestamptz(6)
+  total_games        Int
+  player_a           Json
+  player_b           Json
+  source_event_refs  Json                 @default("{}")
+  phase              String               @default("pre_tournament")
+  phase_locked       Boolean              @default(false)
+  phase_lock_reason  String?
+  is_current         Boolean              @default(true)
+  confirmed_start    DateTime?            @db.Timestamptz(6)
+  confirmed_end      DateTime?            @db.Timestamptz(6)
+  winner             String?
+  next_cycle         Json?
+  last_synced_at     DateTime?            @db.Timestamptz(6)
+  last_sync_status   String?
+  last_feed_ok_at    DateTime?            @db.Timestamptz(6)
+  last_feed_status   String?
+  created_by         String
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  post_types         post_types           @relation(fields: [post_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  championship_flags championship_flags[]
+  championship_games championship_games[]
+  championship_log   championship_log[]
+
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model championship_flags {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cycle_id            String              @db.Uuid
+  kind                String
+  severity            String
+  auto_clear          Boolean
+  game_number         Int?
+  message             String
+  detail              Json                @default("{}")
+  status              String              @default("open")
+  opened_at           DateTime            @default(now()) @db.Timestamptz(6)
+  resolved_at         DateTime?           @db.Timestamptz(6)
+  resolved_by         String?
+  resolution_note     String?
+  championship_cycles championship_cycles @relation(fields: [cycle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model championship_games {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cycle_id            String              @db.Uuid
+  kind                String              @default("classical")
+  game_number         Int
+  idempotency_key     String              @unique
+  state               String              @default("scheduled")
+  scheduled_at        DateTime?           @db.Timestamptz(6)
+  white_player        String?
+  result              String?
+  d3_game_id          String?
+  d3_round_id         String?
+  round_label         String?
+  round_name          String?
+  round_url           String?
+  pgn                 String?
+  played_at           DateTime?           @db.Timestamptz(6)
+  observed_at         DateTime?           @db.Timestamptz(6)
+  confirmed_at        DateTime?           @db.Timestamptz(6)
+  confirmed_by        String?
+  confirmation_basis  String?
+  result_version      Int                 @default(1)
+  opportunity_id      String?             @db.Uuid
+  post_status         String              @default("none")
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime            @default(now()) @db.Timestamptz(6)
+  championship_cycles championship_cycles @relation(fields: [cycle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  post_opportunities  post_opportunities? @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([cycle_id, kind, game_number])
+  @@index([cycle_id, kind, game_number], map: "championship_games_cycle")
+  @@schema("smb")
+}
+
+model championship_log {
+  id                  BigInt              @id @default(autoincrement())
+  cycle_id            String              @db.Uuid
+  at                  DateTime            @default(now()) @db.Timestamptz(6)
+  kind                String
+  actor               String
+  message             String
+  detail              Json                @default("{}")
+  championship_cycles championship_cycles @relation(fields: [cycle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([cycle_id, at(sort: Desc)], map: "championship_log_cycle")
   @@schema("smb")
 }
 

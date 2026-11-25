@@ -8,25 +8,31 @@
       "enabled": true,
       "reliability": "official",
       "access": {
-        "method": "file_download",
+        "method": "manual",
         "baseUrl": "https://ratings.fide.com/",
         "auth": "none",
         "termsUrl": "https://www.fide.com/"
       },
       "policy": {
-        "status": "pending_verification",
-        "automatedRetrieval": false,
+        "status": "approved",
+        "verifiedAt": "2026-11-18",
+        "automatedRetrieval": true,
         "attributionRequired": true,
-        "notes": "No public API; monthly rating lists are downloadable files. Terms not yet checked for automated use."
+        "notes": "Operator-confirmed record. An administrator copies results from the official FIDE pages into SMB; SMB never scrapes FIDE. automatedRetrieval means the adapter may read SMB's own confirmed record."
       },
-      "capabilities": [],
+      "capabilities": ["events", "games", "players", "news"],
       "limits": {
         "maxConcurrent": 1,
         "minIntervalMs": 5000,
         "rateLimitBackoffMs": 60000,
         "timeoutMs": 30000,
         "maxRetries": 2,
-        "cacheTtlSeconds": {}
+        "cacheTtlSeconds": {
+          "events": 0,
+          "games": 0,
+          "players": 0,
+          "news": 0
+        }
       }
     },
     {

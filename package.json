@@ -42,6 +42,9 @@
     "schedule:tick": "npm run schedule:tick -w @smb/api --",
     "schedule:status": "npm run schedule:status -w @smb/api --",
     "schedule:preview": "npm run schedule:preview -w @smb/api --",
+    "championship:sync": "npm run championship:sync -w @smb/api --",
+    "championship:status": "npm run championship:status -w @smb/api --",
+    "championship:register": "npm run championship:register -w @smb/api --",
     "installer:package": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/build-package.ps1",
     "installer:test": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Import-Module Pester; Invoke-Pester installer/tests\""
   },
