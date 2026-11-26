@@ -99,7 +99,7 @@ async function runPair(args: Args): Promise<number> {
 
 /**
  * Service mode. Keeps the local runtimes healthy, writes health.json for the watchdog and, once the PC is
- * paired, reports status to the SMB API. Claiming jobs is added with the job runner (module 1.17).
+ * paired, reports status to the SMB API. Claiming jobs comes with the worker endpoints (module 1.18).
  */
 async function runService(args: Args): Promise<void> {
   const { cfg, paths, gpu, llm, runner } = build(args.configPath);

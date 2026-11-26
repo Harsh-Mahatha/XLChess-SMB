@@ -15,10 +15,18 @@ import {
   heartbeatJob,
   reapExpiredLeases,
 } from '../../../apps/api/src/jobs/index.js';
-import { approveRevision } from '../../../apps/api/src/review/index.js';
+import { loadEnv } from '../../../apps/api/src/env.js';
+import { publishDue } from '../../../apps/api/src/publishing/index.js';
+import {
+  approveRevision,
+  editCandidate,
+  requestRevision,
+  transitionOpportunity,
+} from '../../../apps/api/src/review/index.js';
 import { InMemoryObjectStore } from '../../../apps/api/src/storage/index.js';
 import {
   advanceOpportunity,
+  renderForRevision,
   resumeOpportunity,
   runAvailableJobs,
   runWorkflowTick,
@@ -584,5 +592,185 @@ describe('corrections', () => {
     );
     expect((await runWorkflowTick(deps())).corrected).toHaveLength(0);
     expect(await status(opp)).toBe('published');
+  });
+});
+
+describe('review actions that need the workflow', () => {
+  const actor = { userId: 'reviewer-1' };
+  const ctx = () => ({
+    db: prisma,
+    store,
+    channels,
+    publishMode: 'dry_run' as const,
+    now: () => clock,
+  });
+
+  async function inReview(): Promise<string> {
+    const opp = await researched();
+    await drain(opp);
+    expect(await status(opp)).toBe('awaiting_review');
+    return opp;
+  }
+
+  it('writes a new set of candidates and graphics when the reviewer asks for another try', async () => {
+    const opp = await inReview();
+    const res = await transitionOpportunity(ctx(), actor, opp, 'regenerate', {
+      feedback: 'Lead with the score, please',
+      feedbackTags: ['too_long'],
+    });
+    expect(res.jobId).not.toBeNull();
+    expect(await status(opp)).toBe('generating');
+    await drain(opp);
+    expect(await status(opp)).toBe('awaiting_review');
+    expect(
+      await count(
+        'select count(distinct generation_cycle) n from smb.post_candidates where opportunity_id = $1',
+        [opp],
+      ),
+    ).toBe(2);
+    const newest = await rows<{ id: string }>(
+      pgc,
+      `select id from smb.post_candidates where opportunity_id = $1
+         and generation_cycle = (select max(generation_cycle) from smb.post_candidates where opportunity_id = $1)`,
+      [opp],
+    );
+    expect(newest).toHaveLength(3);
+    expect(
+      await count(
+        'select count(*) n from smb.candidate_renders where candidate_id = any($1::uuid[])',
+        [newest.map((c) => c.id)],
+      ),
+    ).toBe(3);
+    // The request's own job ran; the orchestrator queued no second generation for it.
+    expect(
+      await count(
+        "select count(*) n from smb.jobs where opportunity_id = $1 and kind = 'candidates_generate'",
+        [opp],
+      ),
+    ).toBe(2);
+  });
+
+  it('runs a rewrite request from the queue and leaves the opportunity in review', async () => {
+    const opp = await inReview();
+    const cand = await prisma.post_candidates.findFirstOrThrow({
+      where: { opportunity_id: opp, slot: 'B' },
+      include: { post_revisions: { orderBy: { revision_no: 'desc' }, take: 1 } },
+    });
+    const req = await requestRevision(ctx(), actor, cand.id, {
+      baseRevisionId: cand.post_revisions[0]!.id,
+      feedback: 'Shorter and calmer',
+    });
+    expect(req.jobId).not.toBeNull();
+    await runAvailableJobs(deps(), { budget: 5 });
+    const job = await prisma.jobs.findUniqueOrThrow({ where: { id: req.jobId! } });
+    expect(job.status).toBe('succeeded');
+    expect(
+      await count('select count(*) n from smb.post_revisions where candidate_id = $1', [cand.id]),
+    ).toBe(2);
+    expect(await status(opp)).toBe('awaiting_review');
+  });
+
+  it('makes a new graphic straight away when an edit changes the headline', async () => {
+    const opp = await inReview();
+    const cand = await prisma.post_candidates.findFirstOrThrow({
+      where: { opportunity_id: opp, slot: 'A' },
+      include: { post_revisions: { orderBy: { revision_no: 'desc' }, take: 1 } },
+    });
+    const base = cand.post_revisions[0]!;
+    const d = deps();
+    const edited = await editCandidate(
+      {
+        ...ctx(),
+        rerender: async (candidateId, revisionId) => {
+          const r = await renderForRevision(d, candidateId, revisionId);
+          if (!r.rendered) throw new Error(r.reason);
+        },
+      },
+      actor,
+      cand.id,
+      { baseRevisionId: base.id, headline: 'A different headline', changeKind: 'creative' },
+    );
+    expect(edited).toMatchObject({ graphicStale: false, graphicRegenerated: true });
+    expect(
+      await count(
+        'select count(*) n from smb.candidate_renders where candidate_id = $1 and revision_id = $2',
+        [cand.id, edited.revisionId],
+      ),
+    ).toBe(1);
+  });
+
+  it('starts research again when the reviewer asks for more of it', async () => {
+    const opp = await inReview();
+    await transitionOpportunity(ctx(), actor, opp, 'request_research', {
+      feedback: 'Check the clock times',
+    });
+    expect(await status(opp)).toBe('researching');
+    await advanceOpportunity(deps(), opp);
+    const jobs = await rows<{ idempotency_key: string; status: string }>(
+      pgc,
+      "select idempotency_key, status from smb.jobs where opportunity_id = $1 and kind = 'research_build' order by created_at",
+      [opp],
+    );
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.status).toBe('queued');
+  });
+});
+
+describe('an approval is never lost to a retry', () => {
+  it('leaves an approved post, its approval and its publication alone through ticks and publishing runs', async () => {
+    const opp = await researched();
+    await drain(opp);
+    const cand = await prisma.post_candidates.findFirstOrThrow({
+      where: { opportunity_id: opp, slot: 'A' },
+      include: { post_revisions: { orderBy: { revision_no: 'desc' }, take: 1 } },
+    });
+    const rev = cand.post_revisions[0]!;
+    await approveRevision(
+      { db: prisma, store, channels, publishMode: 'dry_run', now: () => clock },
+      { userId: 'reviewer-1' },
+      {
+        revisionId: rev.id,
+        contentHash: rev.content_hash,
+        channels: ['x'],
+        acknowledgeFailedChecks: true,
+      },
+    );
+    const before = await count(
+      'select count(*) n from smb.review_actions where opportunity_id = $1 and action = $2::smb.review_action_type',
+      [opp, 'approve'],
+    );
+
+    for (let i = 0; i < 3; i++) await runWorkflowTick(deps());
+    const publishDeps = {
+      db: prisma,
+      store,
+      channels,
+      env: loadEnv({ NODE_ENV: 'test' }),
+      publishers: {},
+      logger,
+      now: () => clock,
+    };
+    await publishDue(publishDeps, { limit: 10 });
+    await publishDue(publishDeps, { limit: 10 });
+
+    expect(
+      await count(
+        'select count(*) n from smb.review_actions where opportunity_id = $1 and action = $2::smb.review_action_type',
+        [opp, 'approve'],
+      ),
+    ).toBe(before);
+    // Dry run records what would have been posted, once, however many times the publisher runs.
+    expect(
+      await count(
+        "select count(*) n from smb.publications p join smb.review_actions a on a.id = p.approval_id where a.opportunity_id = $1 and p.status = 'dry_run_recorded'",
+        [opp],
+      ),
+    ).toBe(1);
+    expect(
+      await count(
+        'select count(*) n from smb.publications p join smb.review_actions a on a.id = p.approval_id where a.opportunity_id = $1',
+        [opp],
+      ),
+    ).toBe(1);
   });
 });

@@ -52,6 +52,11 @@ export function buildRenderData(
   template: TemplateManifest,
   claims: ClaimForRender[],
   photos: ChosenPhoto[],
+  /**
+   * The revision's headline. Approval refuses a graphic made for a different headline, so it is part of the data
+   * (and so of the render key) even for a template that does not draw it: a new headline gets its own render record.
+   */
+  headline?: string,
 ): RenderDataResult {
   if (template.id !== 'player-vs-player') {
     return { mapped: false, reason: `no data mapping for template ${template.id}` };
@@ -76,6 +81,7 @@ export function buildRenderData(
     initials_a: initials(white),
     initials_b: initials(black),
     ...(result ? { result } : {}),
+    ...(headline ? { headline: headline.slice(0, 1000) } : {}),
   };
   const photoData: NonNullable<RenderDataInput['photos']> = {};
   for (const [slot, name] of [
@@ -83,7 +89,11 @@ export function buildRenderData(
     ['photo_b', black],
   ] as const) {
     const p = photoFor(name, photos);
-    if (p) photoData[slot] = { assetId: p.assetId, credit: p.attributionText || undefined };
+    if (p)
+      photoData[slot] = {
+        assetId: p.assetId,
+        credit: p.attributionText ? p.attributionText.slice(0, 300) : undefined,
+      };
   }
   return {
     mapped: true,

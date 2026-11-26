@@ -126,10 +126,12 @@ export async function renderForRevision(
     where: { package_id: candidate.research_package_id },
   });
   const photos = await listChosenPhotos(deps.db, opp.id);
+  const revision = await deps.db.post_revisions.findUniqueOrThrow({ where: { id: revisionId } });
   const built = buildRenderData(
     manifest,
     claims.map((c) => ({ claimKey: c.claim_key, value: c.value })),
     photos,
+    revision.headline ?? undefined,
   );
   if (!built.mapped) return { rendered: false, reason: built.reason };
 

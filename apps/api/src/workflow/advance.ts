@@ -213,6 +213,7 @@ export async function advanceOpportunity(
       ...base,
       kind: 'candidates_generate',
       base: `regenerate:${regen.id}`,
+      scope: regen.id,
       payload: {
         opportunityId,
         newCycle: true,

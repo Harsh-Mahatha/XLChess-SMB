@@ -927,6 +927,7 @@ export async function transitionOpportunity(
               ...(newAngleId && { angleId: newAngleId }),
             } as Prisma.InputJsonValue,
             idempotency_key: `regenerate:${action.id}`,
+            job_scope: action.id,
             not_after: opp.not_after,
           },
         });
