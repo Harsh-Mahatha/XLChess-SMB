@@ -78,7 +78,8 @@ export interface ClaimOptions {
  * job that crashes its runner every time still reaches its limit.
  */
 export async function claimJob(db: Db, o: ClaimOptions): Promise<JobRow | null> {
-  const now = o.now ?? new Date();
+  // Without a given time the database clock decides, so a job queued a moment ago is never 'in the future'.
+  const now = o.now ? Prisma.sql`${o.now}::timestamptz` : Prisma.sql`now()`;
   const kindFilter = o.kinds ? Prisma.sql`and kind = any(${[...o.kinds]}::text[])` : Prisma.empty;
   const rows = await db.$queryRaw<jobs[]>`
     update smb.jobs set
