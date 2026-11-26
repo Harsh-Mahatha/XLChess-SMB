@@ -22,14 +22,21 @@ const initials = (name: string): string =>
     .slice(0, 2)
     .join('');
 
-const surname = (name: string): string => {
-  const part = name.includes(',') ? name.split(',')[0]! : (name.trim().split(/\s+/).pop() ?? name);
-  return part.trim().toLowerCase();
-};
+/** Name parts long enough to be a surname: "Sindarov J", "Sindarov, J." and "Jonas Sindarov" all share "sindarov". */
+const nameParts = (name: string): Set<string> =>
+  new Set(
+    name
+      .toLowerCase()
+      .split(/[^\p{L}]+/u)
+      .filter((p) => p.length >= 3),
+  );
 
 function photoFor(name: string, photos: ChosenPhoto[]): ChosenPhoto | undefined {
-  const key = surname(name);
-  return photos.find((p) => p.subject.role === 'player' && surname(p.subject.name) === key);
+  const parts = nameParts(name);
+  return photos.find(
+    (p) =>
+      p.subject.role === 'player' && [...nameParts(p.subject.name)].some((part) => parts.has(part)),
+  );
 }
 
 /**
