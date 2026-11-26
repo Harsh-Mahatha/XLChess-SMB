@@ -185,7 +185,7 @@ export async function saveGeneration(
 /**
  * Generation step for one opportunity: gate, build the model's input, run the pipeline with the given
  * provider, and store the three candidates. The opportunity stays in `generating`: images are still to
- * come (modules 1.8 to 1.10), and moving it on is the orchestrator's job (module 1.17).
+ * come (modules 1.8 to 1.10), and moving it on is the orchestrator's job (module 1.17, `advanceOpportunity`).
  */
 export async function generateCandidates(
   deps: GenerateDeps,

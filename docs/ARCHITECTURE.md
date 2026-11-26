@@ -355,7 +355,7 @@ Defaults live in `smb.retention_policies` and can be edited:
 Anything used by an approved or published revision, its ancestor originals, and licence evidence are never touched. The function only marks rows. Removing the files from Storage is `purgeExpiredAssets` (1.9); running it on a schedule belongs to 1.17.
 
 ### Deferred to later modules
-`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), the derived, render and generated Storage buckets (done in 1.9; the `originals` and `evidence` buckets came with 1.8), and the job runner and lease reaper (1.17).
+`workers` and `user_roles` (1.18, so `jobs.leased_by` has no foreign key yet), the derived, render and generated Storage buckets (done in 1.9; the `originals` and `evidence` buckets came with 1.8). The job runner and lease reaper are built (1.17, see the 1.17 section below).
 
 ---
 
@@ -934,3 +934,54 @@ Environment: `SMB_EVENTS_ENABLED=false`, `SMB_EVENTS_TICK_SECONDS=30`, `SMB_EVEN
 
 **Not in 1.16.** Push or streaming ingestion and provider webhooks (D2). Detectors for rounds, tournaments, rating lists and news (D12). Moving opportunities after a correction (1.17). Approving D2, D4 or D5 for automated retrieval (a terms question, not code). Conditional HTTP requests (ETag): Lichess support for broadcast PGN is not verified, and round-aware polling gives most of the saving.
 
+---
+
+## Workflow orchestration and recovery (module 1.17)
+
+The orchestrator takes an opportunity from `pending` to `awaiting_review` and keeps publishing running. It holds no state of its own: every pass looks at the database, works out which step is missing, and queues it. A crash anywhere leaves the next pass to reach the same answer.
+
+### What runs
+- **Jobs** (`apps/api/src/jobs/`): the durable queue in `smb.jobs`. `enqueueJob` is idempotent (a key never queues twice, and only one waiting or running job exists per opportunity, kind and scope). `claimJob` uses `FOR UPDATE SKIP LOCKED`, counts every claim as an attempt, and leases the job. `heartbeatJob` extends the lease, `completeJob` and `failJob` are idempotent on `(jobId, leaseId)`, and `reapExpiredLeases` puts a job whose runner went silent back in the queue (or stops it as `dead` when its attempts are used up).
+- **Workflow** (`apps/api/src/workflow/`): `advanceOpportunity` (what is missing, queue it, move the status on), step handlers that wrap the existing services, the runner, `runWorkflowTick`, `resumeOpportunity`, and the corrections and stale rules.
+
+| Kind | Lane | Wraps | Scope |
+|---|---|---|---|
+| `research_build` | server | `buildResearchPackage` and the readiness gate | |
+| `story_select` | server | `selectStory` (deterministic code, so no PC is needed) | |
+| `images_discover` | server | `discoverImages` | |
+| `graphics_render` | server | `renderForRevision` → `renderGraphic` | candidate id |
+| `assets_purge` | server | `purgeExpiredAssets`, queued once a day (`assets_purge:<date>`) | |
+| `candidates_generate` | gpu | `generateCandidates` (also queued by review's regenerate) | |
+| `revision_from_feedback` | gpu | `reviseCandidate` (queued by review's rewrite request) | action id |
+
+### Flow
+`pending` → `researching` (research job, then story selection) → `generating` (photographs and candidates at the same time, then one graphic per candidate) → `awaiting_review`. Everything after review is review's and publishing's: `approved` → `scheduled` → `publishing` → `published` / `partially_published`, tracked per channel. The orchestrator never touches an opportunity once it is in review, so an approval cannot be lost to a retry, and `publishDue` (run by `SMB_PUBLISHER_ENABLED`) handles one channel failing without re-posting another.
+
+### Decisions
+- **D1: gpu jobs and workers.** Claiming, leasing and completing jobs are service functions in `jobs/`. The `/worker/v1` endpoints, device tokens and the `workers` table are module 1.18. Until then `SMB_AI_PROVIDER=stub` runs the gpu lane inside the API with the stub provider, which is how the whole pipeline is tested. With `worker`, gpu jobs wait in the queue.
+- **D2: story selection runs on the server.** It ranks angles in code with no model, so it does not go to the PC (this differs from section 6's first draft).
+- **D3: idempotency keys come from the cause**: `research:<opp>:<time it entered researching>`, `story:<opp>:<package>`, `images:<opp>:<selection>`, `generate:<opp>:<selection>`, `regenerate:<action>`, `render:<candidate>:<revision>`. An admin retry adds `#n`.
+- **D4: retries.** A retryable failure goes back to the queue after `backoffSeconds × backoffMultiplier^(attempts-1)` from the post type's `retryPolicy`, up to `maxAttempts`. A permanent failure (a gate that will keep saying no, an invalid model answer, `verification_failed`) stops at once. Unknown errors are retried: the attempt limit bounds the cost. Research that is not ready yet (a required fact still missing) is retryable, since the source may publish it.
+- **D5: failure and resume.** A job that ends badly sets the opportunity to `failed` with `failed_step` (`researching` or `generating`) and `failure_reason`. `resumeOpportunity` (`POST /v1/admin/opportunities/:id/retry`, `npm run workflow:retry`) moves it back to that stage and queues a replacement only for the jobs of that step that ended badly. Research is not repeated for a failed graphic, and no review record is touched.
+- **D6: graphics.** `buildRenderData` fills the template only from verified claims and stored photographs (V1 maps `player-vs-player`; flags and ratings wait for verified federation and rating claims). Photographs go to the player whose surname matches. Inputs that need a person (`text_overflow`, `photo_*`, `missing_data`, `unknown_flag`) retry once without photographs; if that fails too, the candidate goes to review with no graphic. `verification_failed` stops the job. The headline is part of the render data so that a changed headline gets its own render record: approval refuses a graphic made for a different headline.
+- **D7: photographs and candidates run at the same time**, graphics once both are settled. A failed photograph search does not stop a post type whose images are `preferred`; it does when they are `required`.
+- **D8: corrections.** `applyCorrections` finds opportunities with `trigger_event_version` below their event's `version`. If unpublished, they return to `researching` on the corrected facts (the same opportunity), the version is updated, any approval is withdrawn (pending publications cancelled, a `comment` tagged `approval_withdrawn` and `facts_corrected`), and active jobs are cancelled. Published posts are left to `result_corrected`.
+- **D9: stale work.** An opportunity before review past its `not_after` becomes `skipped` (reason `stale: ...`), and its waiting jobs are cancelled. Jobs past their own `not_after` expire. An opportunity waiting for a reviewer is never expired.
+- **D10: loops** (all off by default). `SMB_WORKFLOW_ENABLED` starts the tick (`SMB_WORKFLOW_TICK_SECONDS`, default 15) and the runner (`SMB_RUNNER_CONCURRENCY`, default 2). `SMB_PUBLISHER_ENABLED` runs `publishDue` every `SMB_PUBLISH_INTERVAL_SECONDS`. The tick holds a transaction-scoped advisory lock, so a second API instance does nothing; claims use `SKIP LOCKED`.
+- **Re-render after an edit.** `server.ts` gives the review actions a `rerender` hook that calls `renderForRevision`, so an edit that changes the headline gets a new graphic at once.
+
+### Routes and CLI
+Admin routes (`admin` role): `GET /v1/admin/jobs`, `POST /v1/admin/jobs/:id/{cancel,reprioritise}`, `GET /v1/opportunities/:id/workflow` (status history and every job), `POST /v1/admin/opportunities/:id/retry`. Retry and cancel write to the audit log. CLI: `npm run workflow:tick`, `workflow:run`, `workflow:status`, `workflow:retry -- --opportunity <id>`.
+
+### Why is this post stuck?
+1. `GET /v1/opportunities/:id/workflow` or `npm run workflow:status -- --opportunity <id>`: the status, `failed_step`, `failure_reason`, and each job's attempts and last error.
+2. A queued job that never runs: is `SMB_WORKFLOW_ENABLED` on, is its `run_after` in the future (a backoff), or is it a gpu job with no paired worker?
+3. `failed`: fix the cause (a source, storage), then retry from the step that failed.
+4. `skipped` with `stale`: the post was too old to be worth sending; open a new opportunity if it still matters.
+5. A lease that keeps expiring: the step takes longer than its lease (120 s server, 600 s gpu). Raise the lease or find the slow step.
+
+### Hand-off to 1.18 and 1.19
+- 1.18: the `workers` and pairing-code tables, device-token auth, and the `/worker/v1` pair, status, config, claim, heartbeat, complete and fail endpoints on top of `claimJob`, `heartbeatJob`, `completeJob` and `failJob`. For the real worker, `buildInputForOpportunity` makes the model's input at claim time and `saveGeneration` / `saveRevision` store the result at complete time (both already re-check it). Set `jobs.leased_by` and add its foreign key then. The worker's claim loop and local checkpoint also belong there.
+- 1.19: job counts by kind and status, attempts, time in each step and the dead-job rate come from `smb.jobs` and `smb.opportunity_events`.
+
+**Not in 1.17.** Worker endpoints and device auth (1.18). The XLChess screens for jobs and failures. Data mappings for templates other than `player-vs-player` (those candidates reach review without a graphic). A federation-to-flag table. A refresh path for image discovery that found candidates but chose none.

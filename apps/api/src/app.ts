@@ -11,6 +11,7 @@ import { publicationsRouter } from './http/routes/publications.js';
 import { schedulingRouter, type SchedulingRouteDeps } from './http/routes/scheduling.js';
 import { championshipsRouter, type ChampionshipRouteDeps } from './http/routes/championships.js';
 import { eventsRouter, type EventsRouteDeps } from './http/routes/events.js';
+import { workflowRouter, type WorkflowRouteDeps } from './http/routes/workflow.js';
 import type { PublishDeps } from './publishing/service.js';
 
 export const API_VERSION = '0.1.0';
@@ -28,6 +29,8 @@ export interface AppDeps {
   championships?: ChampionshipRouteDeps;
   /** Event ledger and detector routes (1.16). */
   events?: EventsRouteDeps;
+  /** Job queue and opportunity retry routes (1.17). */
+  workflow?: WorkflowRouteDeps;
 }
 
 /**
@@ -44,6 +47,7 @@ export function createApp({
   scheduling,
   championships,
   events,
+  workflow,
 }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -69,6 +73,10 @@ export function createApp({
   }
   if (events) {
     app.use(eventsRouter(events));
+  }
+
+  if (workflow) {
+    app.use(workflowRouter(workflow));
   }
 
   app.use(notFoundHandler);

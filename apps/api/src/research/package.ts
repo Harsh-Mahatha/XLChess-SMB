@@ -73,6 +73,14 @@ export async function savePackage(
 ): Promise<{ packageId: string; version: number }> {
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`select pg_advisory_xact_lock(hashtext(${'smb.research:' + opportunityId}))`;
+    // A job that ran again after a crash finds the package its first run stored, instead of adding a second.
+    if (jobId) {
+      const done = await tx.research_packages.findFirst({
+        where: { job_id: jobId, status: { in: ['complete', 'partial'] } },
+        orderBy: { version: 'desc' },
+      });
+      if (done) return { packageId: done.id, version: done.version };
+    }
     const latest = await tx.research_packages.aggregate({
       where: { opportunity_id: opportunityId },
       _max: { version: true },
@@ -129,6 +137,20 @@ export async function buildResearchPackage(
   opportunityId: string,
   jobId?: string,
 ): Promise<{ packageId: string; version: number; status: AssembledPackage['status'] }> {
+  if (jobId) {
+    // The same job running again (after a crash) returns its stored package without asking the sources again.
+    const done = await deps.db.research_packages.findFirst({
+      where: { job_id: jobId, status: { in: ['complete', 'partial'] } },
+      orderBy: { version: 'desc' },
+    });
+    if (done) {
+      return {
+        packageId: done.id,
+        version: done.version,
+        status: done.status as AssembledPackage['status'],
+      };
+    }
+  }
   const opp = await deps.db.post_opportunities.findUniqueOrThrow({ where: { id: opportunityId } });
   const row = await deps.db.post_configs.findUniqueOrThrow({ where: { id: opp.post_config_id } });
   const config = PostTypeConfig.parse(row.config_json);

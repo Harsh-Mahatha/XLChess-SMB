@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * The part of the worker protocol (docs/ARCHITECTURE.md section 6) that the installer and the worker's
  * heartbeat need first. The API implements these endpoints against the same schemas; claim, lease
- * and complete are added with the job runner (module 1.17).
+ * and complete are added with the worker endpoints (module 1.18).
  */
 
 /** What the worker reports about its GPU. Null on a development PC without an NVIDIA GPU. */
