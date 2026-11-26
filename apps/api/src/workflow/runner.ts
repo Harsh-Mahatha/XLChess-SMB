@@ -1,6 +1,5 @@
-import { PostTypeConfig, type JobLane } from '@smb/shared';
+import type { JobLane } from '@smb/shared';
 import {
-  backoffSeconds,
   claimJob,
   classifyError,
   completeJob,
@@ -10,6 +9,7 @@ import {
 } from '../jobs/index.js';
 import { advanceOpportunity } from './advance.js';
 import { executeJob } from './handlers.js';
+import { backoffFor } from './retry.js';
 import { nowOf, type WorkflowDeps } from './types.js';
 
 const DEFAULT_LEASE = { server: 120, gpu: 600 };
@@ -21,18 +21,6 @@ export interface RunOutcome {
   kind: string;
   outcome: 'completed' | 'requeued' | 'dead' | 'failed' | 'lease_lost' | 'already_completed';
   error?: string;
-}
-
-async function backoffFor(deps: WorkflowDeps, job: JobRow, attempts: number): Promise<number> {
-  if (job.opportunity_id) {
-    const opp = await deps.db.post_opportunities.findUnique({ where: { id: job.opportunity_id } });
-    const row =
-      opp && (await deps.db.post_configs.findUnique({ where: { id: opp.post_config_id } }));
-    if (row) {
-      return backoffSeconds(attempts, PostTypeConfig.parse(row.config_json).retryPolicy);
-    }
-  }
-  return backoffSeconds(attempts, { backoffSeconds: 60, backoffMultiplier: 2 });
 }
 
 /** Runs one claimed job to its end: heartbeat while it works, then record success, a retry or a stop. */
@@ -73,7 +61,7 @@ export async function processJob(deps: WorkflowDeps, job: JobRow): Promise<RunOu
     );
     const failed = await failJob(deps.db, job.id, leaseId, {
       ...c,
-      retryInSeconds: await backoffFor(deps, job, job.attempts),
+      retryInSeconds: await backoffFor(deps.db, job, job.attempts),
       now: nowOf(deps),
     });
     outcome = {

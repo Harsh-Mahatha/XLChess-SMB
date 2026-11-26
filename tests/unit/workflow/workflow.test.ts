@@ -10,6 +10,7 @@ import { JobError, classifyError } from '../../../apps/api/src/jobs/errors.js';
 import { backoffSeconds, nextRetryKey } from '../../../apps/api/src/jobs/queue.js';
 import { GraphicError } from '../../../apps/api/src/graphics/text.js';
 import { buildRenderData } from '../../../apps/api/src/workflow/render-data.js';
+import { IN_PROCESS_GPU_KINDS } from '../../../apps/api/src/workflow/runner.js';
 import { STEP_OF_KIND } from '../../../apps/api/src/workflow/types.js';
 import type { ChosenPhoto } from '../../../apps/api/src/images/index.js';
 
@@ -73,6 +74,7 @@ describe('job kinds', () => {
     ).toEqual([]);
     expect(JOB_LANE_OF.story_select).toBe('server');
     expect(JOB_LANE_OF.candidates_generate).toBe('gpu');
+    expect(IN_PROCESS_GPU_KINDS).not.toContain('worker_selftest');
   });
   it('maps every pipeline job to the step a retry returns to, and leaves review and housekeeping jobs out', () => {
     expect(STEP_OF_KIND.research_build).toBe('researching');

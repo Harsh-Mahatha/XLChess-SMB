@@ -9,6 +9,7 @@ import {
   type GenerationInput,
   type OtherCandidate,
   type RevisionOptions,
+  type RevisionRequest,
   type RevisionResult,
   type Slot,
 } from '@smb/shared';
@@ -254,6 +255,32 @@ export async function saveRevision(
   );
 }
 
+/** Builds the model input and revision request for a pending `revise` review action. */
+export async function buildRevisionSubject(
+  db: PrismaClient,
+  channels: ChannelsRegistry,
+  actionId: string,
+): Promise<{ input: GenerationInput; request: RevisionRequest }> {
+  const { action, candidate, opp, draft, others } = await subject(db, actionId);
+  const current = CandidateDraft.safeParse(draft);
+  if (!current.success) {
+    throw new RevisionNotPossibleError(
+      'nothing_to_revise',
+      `the current revision cannot be rewritten: ${current.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+    );
+  }
+  const { input } = await buildInputForOpportunity(db, channels, opp.id);
+  return {
+    input,
+    request: {
+      slot: candidate.slot as Slot,
+      current: current.data,
+      request: { text: action.feedback, tags: action.feedback_tags },
+      others,
+    },
+  };
+}
+
 /**
  * Revision step for one request (prompt stage 6): build the model's input, rewrite the candidate from the
  * reviewer's feedback with the given provider, and store the result as a new revision. Running it again for
@@ -275,25 +302,7 @@ export async function reviseCandidate(
       created: false,
     };
   }
-  const { action, candidate, opp, draft, others } = await subject(deps.db, actionId);
-  const current = CandidateDraft.safeParse(draft);
-  if (!current.success) {
-    throw new RevisionNotPossibleError(
-      'nothing_to_revise',
-      `the current revision cannot be rewritten: ${current.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
-    );
-  }
-  const { input } = await buildInputForOpportunity(deps.db, deps.channels, opp.id);
-  const result = await runRevision(
-    deps.provider,
-    input,
-    {
-      slot: candidate.slot as Slot,
-      current: current.data,
-      request: { text: action.feedback, tags: action.feedback_tags },
-      others,
-    },
-    options,
-  );
+  const { input, request } = await buildRevisionSubject(deps.db, deps.channels, actionId);
+  const result = await runRevision(deps.provider, input, request, options);
   return saveRevision(deps.db, input, actionId, result, options);
 }

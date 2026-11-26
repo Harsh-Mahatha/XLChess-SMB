@@ -68,6 +68,8 @@ export interface ClaimOptions {
   kinds?: readonly string[];
   /** A paired worker's id (module 1.18); the in-process runner leaves it out. */
   workerId?: string;
+  /** Restricts `worker_selftest` jobs to this specific worker id. */
+  forWorker?: string;
   leaseSeconds: number;
   now?: Date;
 }
@@ -81,6 +83,9 @@ export async function claimJob(db: Db, o: ClaimOptions): Promise<JobRow | null> 
   // Without a given time the database clock decides, so a job queued a moment ago is never 'in the future'.
   const now = o.now ? Prisma.sql`${o.now}::timestamptz` : Prisma.sql`now()`;
   const kindFilter = o.kinds ? Prisma.sql`and kind = any(${[...o.kinds]}::text[])` : Prisma.empty;
+  const workerFilter = o.forWorker
+    ? Prisma.sql`and (kind <> 'worker_selftest' or job_scope = ${o.forWorker})`
+    : Prisma.empty;
   const rows = await db.$queryRaw<jobs[]>`
     update smb.jobs set
       status = 'leased', lease_id = gen_random_uuid(), leased_by = ${o.workerId ?? null}::uuid,
@@ -90,7 +95,7 @@ export async function claimJob(db: Db, o: ClaimOptions): Promise<JobRow | null> 
     where id = (
       select id from smb.jobs
       where status = 'queued' and lane = ${o.lane}::smb.job_lane and run_after <= ${now}::timestamptz
-        and (not_after is null or not_after > ${now}::timestamptz) ${kindFilter}
+        and (not_after is null or not_after > ${now}::timestamptz) ${kindFilter} ${workerFilter}
         and attempts < max_attempts
       order by priority, run_after, created_at
       for update skip locked limit 1)
