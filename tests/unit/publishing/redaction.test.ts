@@ -54,4 +54,47 @@ describe('logger redaction for publishing secrets', () => {
     expect(output).not.toContain('secret-sig-2');
     expect(output).not.toContain('secret-auth-header-value');
   });
+
+  it('redacts worker tokens, pairing codes, hashes and connection strings', () => {
+    let output = '';
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        output += chunk.toString();
+        callback();
+      },
+    });
+    const logger = createLogger({ LOG_LEVEL: 'info' }, stream);
+
+    logger.info(
+      {
+        payload: {
+          deviceToken: 'smbw_secret_device_token_12345',
+          pairingCode: 'ABCD-EFGH',
+          token_hash: 'deadbeef'.repeat(8),
+          code_hash: 'cafebabe'.repeat(8),
+          connectionString: 'postgresql://user:pass@host/db',
+        },
+        req: {
+          body: {
+            pairingCode: 'WXYZ-2345',
+            deviceToken: 'smbw_body_device_token_67890',
+          },
+        },
+        DATABASE_URL: 'postgresql://db-secret',
+        XLCHESS_JWKS_URL: 'https://jwks.example.com/secret',
+      },
+      'worker auth log',
+    );
+
+    expect(output).toContain('[REDACTED]');
+    expect(output).not.toContain('smbw_secret_device_token_12345');
+    expect(output).not.toContain('ABCD-EFGH');
+    expect(output).not.toContain('deadbeef'.repeat(8));
+    expect(output).not.toContain('cafebabe'.repeat(8));
+    expect(output).not.toContain('WXYZ-2345');
+    expect(output).not.toContain('smbw_body_device_token_67890');
+    expect(output).not.toContain('db-secret');
+    expect(output).not.toContain('jwks.example.com/secret');
+    expect(output).not.toContain('postgresql://user:pass');
+  });
 });
