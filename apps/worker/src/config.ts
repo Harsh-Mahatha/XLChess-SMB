@@ -69,6 +69,18 @@ export function derivePaths(cfg: WorkerConfig): WorkerPaths {
 
 export const DEFAULT_CONFIG_PATH = 'C:\\ProgramData\\XLChessWorker\\config.json';
 
+/** Refuses non-HTTPS `apiUrl` unless the host is `localhost` or `127.0.0.1` (D16). */
+export function validateApiUrl(apiUrl: string): void {
+  const parsed = new URL(apiUrl);
+  if (
+    parsed.protocol !== 'https:' &&
+    parsed.hostname !== 'localhost' &&
+    parsed.hostname !== '127.0.0.1'
+  ) {
+    throw new Error(`worker apiUrl must use https: (got ${parsed.protocol}//${parsed.hostname})`);
+  }
+}
+
 export function loadConfig(path: string): WorkerConfig {
   let raw: string;
   try {
@@ -81,6 +93,9 @@ export function loadConfig(path: string): WorkerConfig {
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`invalid worker config ${path}: ${problems}`);
+  }
+  if (parsed.data.apiUrl) {
+    validateApiUrl(parsed.data.apiUrl);
   }
   return parsed.data;
 }

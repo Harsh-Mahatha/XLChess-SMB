@@ -1,10 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { GPU_JOB_KINDS } from '@smb/shared';
 import { WorkerApiClient } from './api-client.js';
-import { DEFAULT_CONFIG_PATH, derivePaths, loadConfig } from './config.js';
+import { DEFAULT_CONFIG_PATH, derivePaths, loadConfig, type WorkerPaths } from './config.js';
 import { NvidiaSmiMonitor } from './gpu.js';
 import { startHealthLoop } from './health.js';
 import { startHeartbeat } from './heartbeat.js';
+import {
+  applyDesiredState,
+  createWorkerRuntimeState,
+  recoverCheckpoint,
+  startJobLoop,
+} from './jobs.js';
 import { pairWithServer, type PairingResult } from './pairing.js';
 import { readDeviceToken } from './token.js';
 import { log } from './log.js';
@@ -55,9 +61,13 @@ function build(configPath: string) {
   return { cfg, paths, gpu, llm, image, runner };
 }
 
+function loadSelfTestWorkflow(paths: WorkerPaths) {
+  return loadWorkflowTemplate(join(paths.workflows, 'z-image-turbo.json'));
+}
+
 async function runSelfTest(args: Args): Promise<number> {
   const { paths, gpu, llm, runner } = build(args.configPath);
-  const template = loadWorkflowTemplate(join(paths.workflows, 'z-image-turbo.json'));
+  const template = loadSelfTestWorkflow(paths);
   let report;
   try {
     report = await runLocalSelfTest({ runner, gpu, template, comfyModelsDir: paths.comfyModels });
@@ -119,17 +129,42 @@ async function runService(args: Args): Promise<void> {
   });
 
   let stopHeartbeat = (): void => undefined;
+  let stopJobs = async (): Promise<void> => undefined;
   const token = await readDeviceToken(paths.tokenFile);
   if (cfg.apiUrl && token) {
+    const client = new WorkerApiClient({ baseUrl: cfg.apiUrl, token });
+    const state = createWorkerRuntimeState();
     stopHeartbeat = startHeartbeat({
-      client: new WorkerApiClient({ baseUrl: cfg.apiUrl, token }),
+      client,
       version: WORKER_VERSION,
       startedAt,
       runner,
       gpu,
       ollamaUp: () => llm.isUp(),
       dataDir: cfg.dataDir,
+      onStatus: (reply) => applyDesiredState(state, reply),
     });
+    await recoverCheckpoint(client, paths.checkpoints);
+    try {
+      const cfgReply = await client.config();
+      applyDesiredState(state, cfgReply);
+    } catch (err) {
+      log('warn', 'could not fetch initial worker config; using defaults', {
+        error: String(err),
+      });
+    }
+    const template = loadSelfTestWorkflow(paths);
+    const loop = startJobLoop({
+      client,
+      workerVersion: WORKER_VERSION,
+      checkpointsDir: paths.checkpoints,
+      state,
+      runner,
+      gpu,
+      template,
+      comfyModelsDir: paths.comfyModels,
+    });
+    stopJobs = loop.stop;
   } else {
     log('warn', 'this PC is not paired with the SMB API yet; running locally only', {
       hasApiUrl: Boolean(cfg.apiUrl),
@@ -152,7 +187,9 @@ async function runService(args: Args): Promise<void> {
     clearInterval(supervisor);
     stopHealth();
     stopHeartbeat();
-    void llm.stop().finally(() => process.exit(0));
+    void stopJobs()
+      .then(() => llm.stop())
+      .finally(() => process.exit(0));
   };
   for (const s of ['SIGINT', 'SIGTERM', 'SIGBREAK'] as const) process.on(s, () => shutdown(s));
 }

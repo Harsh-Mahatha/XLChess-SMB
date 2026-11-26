@@ -41,6 +41,33 @@ describe('loadConfig', () => {
   it('says so when the file is missing', () => {
     expect(() => loadConfig('Z:\\nope\\config.json')).toThrow(/cannot read worker config/);
   });
+
+  it('refuses non-HTTPS apiUrl unless host is localhost or 127.0.0.1', () => {
+    expect(() =>
+      loadConfig(
+        write(
+          JSON.stringify({
+            schemaVersion: 1,
+            programDir: 'C:\\P',
+            dataDir: 'C:\\D',
+            apiUrl: 'http://api.example.com',
+          }),
+        ),
+      ),
+    ).toThrow(/https:/);
+
+    const local = loadConfig(
+      write(
+        JSON.stringify({
+          schemaVersion: 1,
+          programDir: 'C:\\P',
+          dataDir: 'C:\\D',
+          apiUrl: 'http://localhost:4000',
+        }),
+      ),
+    );
+    expect(local.apiUrl).toBe('http://localhost:4000');
+  });
 });
 
 describe('derivePaths', () => {
