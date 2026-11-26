@@ -67,6 +67,10 @@ model jobs {
   finished_at          DateTime?              @db.Timestamptz(6)
   created_at           DateTime               @default(now()) @db.Timestamptz(6)
   updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  error_code           String?
+  progress             Json?
+  heartbeat_at         DateTime?              @db.Timestamptz(6)
+  job_scope            String                 @default("")
   post_opportunities   post_opportunities?    @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "jobs_opportunity_fk")
   media_assets         media_assets[]
   opportunity_events   opportunity_events[]
@@ -76,6 +80,7 @@ model jobs {
   story_selections     story_selections[]
 
   @@index([opportunity_id], map: "jobs_opportunity")
+  @@index([status, updated_at(sort: Desc)], map: "jobs_by_status")
   @@schema("smb")
 }
 
@@ -266,6 +271,8 @@ model post_opportunities {
   triggered_by                                                         String               @default("system")
   trigger_event_id                                                     String?              @db.Uuid
   trigger_event_version                                                Int?
+  failed_step                                                          String?
+  failure_reason                                                       String?
   championship_games                                                   championship_games[]
   detected_events_detected_events_opportunity_idTopost_opportunities   detected_events[]    @relation("detected_events_opportunity_idTopost_opportunities")
   image_candidates                                                     image_candidates[]
