@@ -746,6 +746,7 @@ describe('an approval is never lost to a retry', () => {
       store,
       channels,
       env: loadEnv({ NODE_ENV: 'test' }),
+      modeOf: async () => 'dry_run' as const,
       publishers: {},
       logger,
       now: () => clock,
