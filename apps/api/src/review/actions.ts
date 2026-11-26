@@ -41,8 +41,8 @@ export interface ActionContext {
   now?: () => Date;
   publishMode?: PublishMode;
   /**
-   * Makes a new graphic for a revision whose headline changed. The render job belongs to module 1.17; until
-   * it is wired, an edit that changes the graphic's words leaves the graphic marked stale and approval
+   * Makes a new graphic for a revision whose headline changed (the workflow's `renderForRevision`, module 1.17).
+   * Without it, an edit that changes the graphic's words leaves the graphic marked stale and approval
    * waits for a new one.
    */
   rerender?: (candidateId: string, revisionId: string) => Promise<void>;
@@ -1106,6 +1106,7 @@ export async function requestRevision(
             actionId: action.id,
           } as Prisma.InputJsonValue,
           idempotency_key: `revise:${action.id}`,
+          job_scope: action.id,
           not_after: opp.not_after,
         },
       });

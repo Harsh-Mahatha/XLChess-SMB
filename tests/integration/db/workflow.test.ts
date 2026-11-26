@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- rows are checked loosely */
 import { PrismaClient } from '@prisma/client';
 import { pino } from 'pino';
 import type pg from 'pg';

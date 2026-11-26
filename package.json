@@ -48,6 +48,10 @@
     "events:poll": "npm run events:poll -w @smb/api --",
     "events:status": "npm run events:status -w @smb/api --",
     "events:show": "npm run events:show -w @smb/api --",
+    "workflow:tick": "npm run workflow:tick -w @smb/api --",
+    "workflow:run": "npm run workflow:run -w @smb/api --",
+    "workflow:status": "npm run workflow:status -w @smb/api --",
+    "workflow:retry": "npm run workflow:retry -w @smb/api --",
     "installer:package": "powershell -NoProfile -ExecutionPolicy Bypass -File installer/build-package.ps1",
     "installer:test": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Import-Module Pester; Invoke-Pester installer/tests\""
   },

@@ -10,6 +10,14 @@ import { ContextResolvers, runSchedulerTick, startLoop } from './scheduling/inde
 import { championshipDetector, championshipResolver } from './championship/index.js';
 import { DetectorRegistry, runEventPoll } from './events/index.js';
 import { PrismaSourceRecordStore, createSourceGateway } from './sources/index.js';
+import {
+  createWorkflowDeps,
+  renderForRevision,
+  runAvailableJobs,
+  runWorkflowTick,
+} from './workflow/index.js';
+import { publishDue } from './publishing/index.js';
+import type { WorkflowRouteDeps } from './http/routes/workflow.js';
 import type { ChampionshipRouteDeps } from './http/routes/championships.js';
 import type { EventsRouteDeps } from './http/routes/events.js';
 
@@ -68,6 +76,8 @@ let championships: ChampionshipRouteDeps | undefined;
 let events: EventsRouteDeps | undefined;
 let schedulerLoop: { stop(): void } | undefined;
 let eventsLoop: { stop(): void } | undefined;
+let workflowRoutes: WorkflowRouteDeps | undefined;
+const stoppers: { stop(): void }[] = [];
 if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   const db = await getDb();
   const store = new SupabaseObjectStore({
@@ -76,10 +86,32 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   });
   const verifier = verifierFromEnv(env);
   if (!verifier) logger.warn('XLChess token settings are incomplete: reviewer routes answer 503');
+
+  const sourceGateway = createSourceGateway(configSet.sources, new PrismaSourceRecordStore(db));
+  // The workflow (1.17). With SMB_AI_PROVIDER=stub the gpu lane runs here; with `worker` it waits for paired PCs (1.18).
+  const workflowDeps = createWorkflowDeps({
+    db,
+    store,
+    configSet,
+    env,
+    logger,
+    gateway: sourceGateway,
+  });
+  workflowRoutes = { verifier, db };
   review = {
     verifier,
     read: { db, store, channels: configSet.channels, signedUrlSeconds: env.SMB_SIGNED_URL_SECONDS },
-    act: { db, store, channels: configSet.channels, publishMode: env.SMB_PUBLISH_MODE },
+    act: {
+      db,
+      store,
+      channels: configSet.channels,
+      publishMode: env.SMB_PUBLISH_MODE,
+      // An edit that changes a graphic's words gets a new graphic straight away (1.17).
+      rerender: async (candidateId: string, revisionId: string) => {
+        const r = await renderForRevision(workflowDeps, candidateId, revisionId);
+        if (!r.rendered) throw new Error(r.reason ?? 'the graphic could not be made');
+      },
+    },
   };
   publishing = {
     db,
@@ -89,12 +121,37 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
     publishers: { x: xPublisher },
     logger,
   };
-  // 1.17: schedule publishDue(publishing, { limit: 10 });
+  // 1.17: the orchestrator tick, the job runner and the publisher. Every pass is safe to repeat and to run from
+  // two instances at once (advisory lock, SKIP LOCKED claims), and a crashed pass is simply run again.
+  if (env.SMB_WORKFLOW_ENABLED) {
+    stoppers.push(
+      startLoop({
+        name: 'workflow',
+        intervalMs: env.SMB_WORKFLOW_TICK_SECONDS * 1000,
+        run: () => runWorkflowTick(workflowDeps),
+        logger,
+      }),
+      startLoop({
+        name: 'job-runner',
+        intervalMs: 5000,
+        run: () => runAvailableJobs(workflowDeps, { concurrency: env.SMB_RUNNER_CONCURRENCY }),
+        logger,
+      }),
+    );
+  }
+  if (env.SMB_PUBLISHER_ENABLED) {
+    stoppers.push(
+      startLoop({
+        name: 'publisher',
+        intervalMs: env.SMB_PUBLISH_INTERVAL_SECONDS * 1000,
+        run: () => publishDue(publishing!, { limit: 10 }),
+        logger,
+      }),
+    );
+  }
 
   const resolvers = new ContextResolvers();
   resolvers.register('1.1', championshipResolver(db));
-
-  const sourceGateway = createSourceGateway(configSet.sources, new PrismaSourceRecordStore(db));
 
   if (env.SMB_SCHEDULER_ENABLED) {
     schedulerLoop = startLoop({
@@ -152,7 +209,16 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   );
 }
 
-const app = createApp({ env, logger, review, publishing, scheduling, championships, events });
+const app = createApp({
+  env,
+  logger,
+  review,
+  publishing,
+  scheduling,
+  championships,
+  events,
+  workflow: workflowRoutes,
+});
 
 const server = app.listen(env.PORT, () => {
   logger.info(
@@ -174,6 +240,7 @@ function shutdown(signal: string): void {
   if (eventsLoop) {
     eventsLoop.stop();
   }
+  for (const s of stoppers) s.stop();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }

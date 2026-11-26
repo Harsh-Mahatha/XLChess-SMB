@@ -6,3 +6,4 @@ export * from './runner.js';
 export * from './resume.js';
 export * from './corrections.js';
 export * from './tick.js';
+export * from './factory.js';

@@ -25,6 +25,14 @@ const EnvSchema = z.object({
   SMB_CONTACT: z.string().optional(),
   /** Accept CC BY-SA photos (decision of 2026-11-13). Set to false to reject them. */
   IMAGE_ALLOW_SHARE_ALIKE: bool.default('true'),
+  /** Runs the orchestrator tick and the job runner (1.17): moves opportunities from research to review. Off by default. */
+  SMB_WORKFLOW_ENABLED: bool.default('false'),
+  SMB_WORKFLOW_TICK_SECONDS: z.coerce.number().int().min(5).max(600).default(15),
+  /** Server-lane jobs run at once. The gpu lane is claimed by workers, or runs here with SMB_AI_PROVIDER=stub. */
+  SMB_RUNNER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+  /** Sends approved posts that are due (publishDue). Off by default. */
+  SMB_PUBLISHER_ENABLED: bool.default('false'),
+  SMB_PUBLISH_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3600).default(30),
   SMB_SCHEDULER_ENABLED: bool.default('false'),
   SMB_SCHEDULER_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
   /** Runs the event detectors (1.16), including the World Championship feed sync. Off by default. */
