@@ -15,7 +15,11 @@ export type ChampionshipLogKind =
   | 'emitted'
   | 'emission_skipped'
   | 'sync_failed'
-  | 'edited';
+  | 'edited'
+  /** 1.16: a feed game that maps to no championship game (logged once per game). */
+  | 'unmapped_feed_game'
+  /** 1.16: the feed shows an observed game as unfinished again (the observation is kept). */
+  | 'feed_regressed_game';
 
 export interface ChampionshipLogEntry {
   cycleId: string;

@@ -608,6 +608,14 @@ describe('World Championship lifecycle (1.15)', () => {
       { enableD4: true, zeroCache: true },
     );
 
+    // 1.16 D7c: agreement in a single sync is not enough; the result must be stable for 120 s.
+    const first = await syncChampionship(
+      { db: prisma, gateway, registry, logger },
+      { now: new Date('2026-11-20T14:28:00Z'), force: true },
+    );
+    expect(first.corroboratedGames).toBe(0);
+    expect(first.emit?.created ?? 0).toBe(0);
+
     const s = await syncChampionship(
       { db: prisma, gateway, registry, logger },
       { now: new Date('2026-11-20T14:30:00Z'), force: true },

@@ -20,6 +20,16 @@ beforeAll(async () => {
     `insert into smb.championship_log (cycle_id, kind, actor, message) values ($1, 'registered', 'admin', 'seed')`,
     [rows[0].id],
   );
+  const ev = await db.query(
+    `insert into smb.detected_events (identity_key, kind, post_type_id, detector_id, payload, material_hash)
+     values ('wcc-immut-test:game-1:result', 'game_completed', '1.1', 'championship:1.1', '{}', repeat('a', 64))
+     returning id`,
+  );
+  await db.query(
+    `insert into smb.detected_event_versions (event_id, version, payload, material_hash, reason, actor)
+     values ($1, 1, '{}', repeat('a', 64), 'first_seen', 'system')`,
+    [ev.rows[0].id],
+  );
 });
 afterAll(async () => {
   await db.end();
@@ -101,15 +111,16 @@ const PROTECTED: [string, string, string][] = [
     `update smb.publications set content_hash = repeat('0', 64) where id = '${ID.publication}'`,
     `delete from smb.publications where id = '${ID.publication}'`,
   ],
-  [
-    'trigger_log',
-    `update smb.trigger_log set outcome = 'error'`,
-    `delete from smb.trigger_log`,
-  ],
+  ['trigger_log', `update smb.trigger_log set outcome = 'error'`, `delete from smb.trigger_log`],
   [
     'championship_log',
     `update smb.championship_log set message = 'edited'`,
     `delete from smb.championship_log`,
+  ],
+  [
+    'detected_event_versions',
+    `update smb.detected_event_versions set reason = 'edited'`,
+    `delete from smb.detected_event_versions`,
   ],
 ];
 
@@ -120,6 +131,31 @@ describe('append-only history', () => {
 
   it.each(PROTECTED)('%s: rows cannot be deleted', async (_t, _u, del) => {
     await expect(q(del)).rejects.toThrow(/append-only/);
+  });
+});
+
+describe('detected_events identity (1.16)', () => {
+  it('keeps identity columns and never lowers the version', async () => {
+    await expect(
+      q("update smb.detected_events set identity_key = 'other:game-1:result'"),
+    ).rejects.toThrow(/immutable/);
+    await expect(q("update smb.detected_events set kind = 'news_published'")).rejects.toThrow(
+      /immutable/,
+    );
+    await q('update smb.detected_events set version = 2, corrected_at = now()');
+    await expect(
+      q('update smb.detected_events set version = 1, corrected_at = null'),
+    ).rejects.toThrow(/cannot decrease/);
+    await q('update smb.detected_events set seen_count = seen_count + 1');
+  });
+
+  it('ties state to its opportunity and refusal code', async () => {
+    await expect(q("update smb.detected_events set state = 'opportunity_created'")).rejects.toThrow(
+      /check constraint/,
+    );
+    await expect(q("update smb.detected_events set state = 'refused'")).rejects.toThrow(
+      /check constraint/,
+    );
   });
 });
 

@@ -8,7 +8,9 @@ import { loadEnv } from '../env.js';
 import { createLogger } from '../logger.js';
 import { PrismaSourceRecordStore, createSourceGateway } from '../sources/index.js';
 import { registerCycle } from './service.js';
-import { syncChampionship } from './sync.js';
+import { DetectorRegistry, runEventPoll } from '../events/index.js';
+import { championshipDetector } from './detector.js';
+import { CHAMPIONSHIP_DETECTOR_ID } from './emit.js';
 import { RegisterCycleBody } from './types.js';
 
 const { positionals, values } = parseArgs({
@@ -58,6 +60,9 @@ try {
         `Score (confirmed classical): A ${score.a} - ${score.b} B (${score.confirmed}/${cycle.total_games} confirmed)`,
       );
       console.log(
+        `Next round: ${cycle.next_round_at?.toISOString() ?? '-'}${cycle.any_round_live ? ' (a round is live)' : ''}`,
+      );
+      console.log(
         `Last sync: ${cycle.last_synced_at?.toISOString() ?? '-'} (${cycle.last_sync_status ?? '-'})`,
       );
       console.log(`\nGames (${games.length}):`);
@@ -93,11 +98,21 @@ try {
     const configSet = loadConfigSet();
     const gateway = createSourceGateway(configSet.sources, new PrismaSourceRecordStore(db));
     const now = values.now ? new Date(values.now) : undefined;
-    const summary = await syncChampionship(
-      { db, gateway, registry: configSet.sources, logger },
-      { force: values.force, now },
+    // 1.16: through the events poller, so the lease and poller health apply to manual runs too.
+    const detectors = new DetectorRegistry().register(
+      championshipDetector({
+        db,
+        gateway,
+        registry: configSet.sources,
+        logger,
+        stabilitySeconds: env.SMB_EVENTS_STABILITY_SECONDS,
+      }),
     );
-    console.log(JSON.stringify(summary, null, 2));
+    const poll = await runEventPoll(
+      { db, detectors, logger },
+      { force: values.force, now, only: CHAMPIONSHIP_DETECTOR_ID },
+    );
+    console.log(JSON.stringify(poll.detectors[0], null, 2));
   } else if (command === 'register') {
     if (!values.file) {
       console.error('Usage: championship:register --file <path-to-json>');
