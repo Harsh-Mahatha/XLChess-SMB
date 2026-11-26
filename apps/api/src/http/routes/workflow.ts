@@ -72,6 +72,7 @@ export function workflowRouter(deps: WorkflowRouteDeps): Router {
         runAfter: iso(j.run_after),
         notAfter: iso(j.not_after),
         leaseExpiresAt: iso(j.lease_expires_at),
+        leasedBy: j.leased_by,
         heartbeatAt: iso(j.heartbeat_at),
         lastError: j.last_error,
         errorCode: j.error_code,

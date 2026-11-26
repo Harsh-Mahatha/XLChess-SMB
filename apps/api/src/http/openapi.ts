@@ -4,7 +4,22 @@ import {
   OpenAPIRegistry,
 } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorBody, HealthResponse } from '@smb/shared';
+import {
+  ClaimRequest,
+  ClaimedJob,
+  CompleteRequest,
+  CompleteResponse,
+  ErrorBody,
+  FailRequest,
+  HealthResponse,
+  HeartbeatRequest,
+  HeartbeatResponse,
+  WorkerConfigResponse,
+  WorkerDesiredState,
+  WorkerPairRequest,
+  WorkerPairResponse,
+  WorkerStatusRequest,
+} from '@smb/shared';
 import {
   ActionBody,
   ApproveBody,
@@ -41,6 +56,16 @@ import {
   ListEventsQuery,
   PatchDetectorBody,
 } from './routes/events.js';
+import {
+  CreatePairingCodeBody,
+  ListAuditQuery,
+  ListConfigVersionsQuery,
+  PostTypeIdParam,
+  PutOverridesBody,
+  RevokeWorkerBody,
+  SetPublishModeBody,
+  WorkerIdParam,
+} from './routes/admin.js';
 
 extendZodWithOpenApi(z);
 
@@ -491,6 +516,245 @@ registry.registerPath({
     body: { content: { 'application/json': { schema: PatchDetectorBody } } },
   },
   responses: { 200: ok('Detector updated'), ...errors },
+});
+
+// Worker device protocol (module 1.18).
+registry.registerComponent('securitySchemes', 'workerToken', {
+  type: 'http',
+  scheme: 'bearer',
+  description: 'Opaque revocable device token (smbw_...) issued by POST /worker/v1/pair.',
+});
+const workerSecured = [{ workerToken: [] }];
+
+registry.registerPath({
+  method: 'post',
+  path: '/worker/v1/pair',
+  tags: ['worker'],
+  summary: 'Exchange a single-use pairing code for a device token',
+  request: { body: { content: { 'application/json': { schema: WorkerPairRequest } } } },
+  responses: {
+    201: {
+      description: 'Worker paired',
+      content: { 'application/json': { schema: WorkerPairResponse } },
+    },
+    ...errors,
+  },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/worker/v1/status',
+  tags: ['worker'],
+  summary: 'Report worker health and GPU status and receive desired state',
+  security: workerSecured,
+  request: { body: { content: { 'application/json': { schema: WorkerStatusRequest } } } },
+  responses: {
+    200: {
+      description: 'Desired worker state',
+      content: { 'application/json': { schema: WorkerDesiredState } },
+    },
+    ...errors,
+  },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/worker/v1/config',
+  tags: ['worker'],
+  summary: 'Read worker configuration, prompt versions and model settings',
+  security: workerSecured,
+  responses: {
+    200: {
+      description: 'Worker config',
+      content: { 'application/json': { schema: WorkerConfigResponse } },
+    },
+    ...errors,
+  },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/worker/v1/jobs/claim',
+  tags: ['worker'],
+  summary: 'Claim the next eligible GPU job',
+  security: workerSecured,
+  request: { body: { content: { 'application/json': { schema: ClaimRequest } } } },
+  responses: {
+    200: {
+      description: 'Claimed job',
+      content: { 'application/json': { schema: ClaimedJob } },
+    },
+    204: { description: 'No job available or worker paused' },
+    ...errors,
+  },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/worker/v1/jobs/{id}/heartbeat',
+  tags: ['worker'],
+  summary: 'Extend the lease on a claimed GPU job',
+  security: workerSecured,
+  request: {
+    params: WorkerIdParam,
+    body: { content: { 'application/json': { schema: HeartbeatRequest } } },
+  },
+  responses: {
+    200: {
+      description: 'Heartbeat result',
+      content: { 'application/json': { schema: HeartbeatResponse } },
+    },
+    ...errors,
+  },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/worker/v1/jobs/{id}/complete',
+  tags: ['worker'],
+  summary: 'Submit the result of a claimed GPU job',
+  security: workerSecured,
+  request: {
+    params: WorkerIdParam,
+    body: { content: { 'application/json': { schema: CompleteRequest } } },
+  },
+  responses: {
+    200: {
+      description: 'Completion outcome',
+      content: { 'application/json': { schema: CompleteResponse } },
+    },
+    ...errors,
+  },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/worker/v1/jobs/{id}/fail',
+  tags: ['worker'],
+  summary: 'Report a failure on a claimed GPU job',
+  security: workerSecured,
+  request: {
+    params: WorkerIdParam,
+    body: { content: { 'application/json': { schema: FailRequest } } },
+  },
+  responses: { 200: ok('Failure recorded'), ...errors },
+});
+
+// Administration routes (module 1.18). Admin-only.
+registry.registerPath({
+  method: 'post',
+  path: '/v1/admin/workers/pairing-codes',
+  tags: ['admin'],
+  summary: 'Create a single-use 10-minute pairing code for a home-PC worker',
+  security: secured,
+  request: { body: { content: { 'application/json': { schema: CreatePairingCodeBody } } } },
+  responses: { 201: ok('Pairing code created'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/workers',
+  tags: ['admin'],
+  summary: 'List paired workers with online status, active jobs and latest self-test',
+  security: secured,
+  responses: { 200: ok('Paired workers'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/admin/workers/{id}/pause',
+  tags: ['admin'],
+  summary: 'Pause new job claims for a worker',
+  security: secured,
+  request: { params: WorkerIdParam },
+  responses: { 200: ok('Worker paused'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/admin/workers/{id}/resume',
+  tags: ['admin'],
+  summary: 'Resume job claims for a worker',
+  security: secured,
+  request: { params: WorkerIdParam },
+  responses: { 200: ok('Worker resumed'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/admin/workers/{id}/revoke',
+  tags: ['admin'],
+  summary: 'Revoke a worker token and return its leased jobs to the queue',
+  security: secured,
+  request: {
+    params: WorkerIdParam,
+    body: { content: { 'application/json': { schema: RevokeWorkerBody } } },
+  },
+  responses: { 200: ok('Worker revoked'), ...errors },
+});
+registry.registerPath({
+  method: 'post',
+  path: '/v1/admin/workers/{id}/selftest',
+  tags: ['admin'],
+  summary: 'Queue a worker_selftest job for a worker',
+  security: secured,
+  request: { params: WorkerIdParam },
+  responses: { 202: ok('Self-test queued'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/publish-mode',
+  tags: ['admin'],
+  summary: 'Get stored publish mode setting, environment ceiling, effective mode and live gates',
+  security: secured,
+  responses: { 200: ok('Publish mode state'), ...errors },
+});
+registry.registerPath({
+  method: 'put',
+  path: '/v1/admin/publish-mode',
+  tags: ['admin'],
+  summary: 'Change the publish mode setting (live requires confirmation and all environment gates)',
+  security: secured,
+  request: { body: { content: { 'application/json': { schema: SetPublishModeBody } } } },
+  responses: { 200: ok('Publish mode updated'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/post-types/{id}/config',
+  tags: ['admin'],
+  summary: 'Get the active effective configuration for a post type',
+  security: secured,
+  request: { params: PostTypeIdParam },
+  responses: { 200: ok('Active post-type config'), ...errors },
+});
+registry.registerPath({
+  method: 'put',
+  path: '/v1/admin/post-types/{id}/overrides',
+  tags: ['admin'],
+  summary: 'Apply a runtime override patch to a post type',
+  security: secured,
+  request: {
+    params: PostTypeIdParam,
+    body: { content: { 'application/json': { schema: PutOverridesBody } } },
+  },
+  responses: { 200: ok('Override saved'), ...errors },
+});
+registry.registerPath({
+  method: 'delete',
+  path: '/v1/admin/post-types/{id}/overrides',
+  tags: ['admin'],
+  summary: 'Clear runtime overrides for a post type',
+  security: secured,
+  request: { params: PostTypeIdParam },
+  responses: { 200: ok('Override cleared'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/configs/versions',
+  tags: ['admin'],
+  summary: 'List post-type config versions, newest first',
+  security: secured,
+  request: { query: ListConfigVersionsQuery },
+  responses: { 200: ok('Config versions'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/audit',
+  tags: ['admin'],
+  summary: 'Query the append-only audit log, newest first',
+  security: secured,
+  request: { query: ListAuditQuery },
+  responses: { 200: ok('Audit log entries'), ...errors },
 });
 
 /** Route modules register their paths on `registry`; XLChess generates its typed client from this document. */

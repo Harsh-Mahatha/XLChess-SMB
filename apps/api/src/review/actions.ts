@@ -9,6 +9,7 @@ import {
   type ChannelsRegistry,
   type PublishMode,
 } from '@smb/shared';
+import type { SmbRole } from '../auth/index.js';
 import { AssetIntegrityError, ensureAssetsIntact } from '../assets/index.js';
 import { revisionHash } from '../generation/service.js';
 import { AssetLicenceError, assertAssetsLicensed } from '../images/guard.js';
@@ -32,6 +33,7 @@ export class ReviewError extends Error {
 
 export interface ReviewActor {
   userId: string;
+  role?: SmbRole;
 }
 
 export interface ActionContext {
@@ -40,6 +42,7 @@ export interface ActionContext {
   channels: ChannelsRegistry;
   now?: () => Date;
   publishMode?: PublishMode;
+  publishModeOf?: () => Promise<PublishMode>;
   /**
    * Makes a new graphic for a revision whose headline changed (the workflow's `renderForRevision`, module 1.17).
    * Without it, an edit that changes the graphic's words leaves the graphic marked stale and approval
@@ -348,6 +351,9 @@ export async function approveRevision(
   }
 
   // 5. Write everything together or nothing.
+  const publishMode = ctx.publishModeOf
+    ? await ctx.publishModeOf()
+    : (ctx.publishMode ?? 'dry_run');
   return db.$transaction(
     async (tx) => {
       const opp = await lockOpportunity(tx, candidate.opportunity_id);
@@ -435,6 +441,7 @@ export async function approveRevision(
           action: 'approve',
           content_hash: bound.content_hash,
           reviewer_id: actor.userId,
+          actor_role: actor.role ?? null,
           channels: channels as never,
           scheduled_for: input.scheduledFor ?? null,
           idempotency_key: key ?? null,
@@ -459,7 +466,7 @@ export async function approveRevision(
             approval_id: action.id,
             revision_id: bound.id,
             channel: c as never,
-            mode: ctx.publishMode ?? 'dry_run',
+            mode: publishMode,
             status: 'pending',
             content_hash: bound.content_hash,
             idempotency_key: `pub:${action.id}:${c}`,
@@ -480,6 +487,7 @@ export async function approveRevision(
           target_type: 'revision',
           target_id: bound.id,
           details: {
+            role: actor.role ?? null,
             opportunityId: opp.id,
             candidateId: candidate.id,
             reviewedRevisionId: rev.id,
@@ -695,6 +703,7 @@ export async function editCandidate(
             action: 'comment',
             content_hash: created.content_hash,
             reviewer_id: actor.userId,
+            actor_role: actor.role ?? null,
             feedback: 'The approval was withdrawn because the content was edited',
             feedback_tags: ['approval_withdrawn'],
           },
@@ -707,6 +716,7 @@ export async function editCandidate(
           target_type: 'revision',
           target_id: created.id,
           details: {
+            role: actor.role ?? null,
             opportunityId: opp.id,
             candidateId,
             baseRevisionId: base.id,
@@ -877,6 +887,7 @@ export async function transitionOpportunity(
           action: ACTION_TYPE[kind],
           content_hash: contentHash,
           reviewer_id: actor.userId,
+          actor_role: actor.role ?? null,
           scheduled_for: kind === 'defer' ? (input.deferUntil ?? null) : null,
           feedback: feedback ?? (kind === 'reopen' ? 'Reopened for review' : null),
           feedback_tags: kind === 'reopen' ? [...tags, 'reopen'] : tags,
@@ -940,6 +951,7 @@ export async function transitionOpportunity(
           target_type: 'opportunity',
           target_id: opportunityId,
           details: {
+            role: actor.role ?? null,
             from: opp.status,
             to: rule.to,
             actionId: action.id,
@@ -1090,6 +1102,7 @@ export async function requestRevision(
           action: 'revise',
           content_hash: base.content_hash,
           reviewer_id: actor.userId,
+          actor_role: actor.role ?? null,
           feedback,
           feedback_tags: tags,
           idempotency_key: key ?? null,
@@ -1118,6 +1131,7 @@ export async function requestRevision(
           target_type: 'revision',
           target_id: base.id,
           details: {
+            role: actor.role ?? null,
             opportunityId: opp.id,
             candidateId,
             actionId: action.id,

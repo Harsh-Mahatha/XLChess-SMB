@@ -4,6 +4,8 @@ import type { Logger } from 'pino';
 import type { Env } from './env.js';
 import { errorHandler, notFoundHandler } from './http/errors.js';
 import { buildOpenApiDocument } from './http/openapi.js';
+import { securityHeaders } from './http/security.js';
+import { adminRouter, type AdminRouteDeps } from './http/routes/admin.js';
 import { feedbackRouter } from './http/routes/feedback.js';
 import { healthRouter } from './http/routes/health.js';
 import { reviewRouter, type ReviewRouteDeps } from './http/routes/review.js';
@@ -11,6 +13,7 @@ import { publicationsRouter } from './http/routes/publications.js';
 import { schedulingRouter, type SchedulingRouteDeps } from './http/routes/scheduling.js';
 import { championshipsRouter, type ChampionshipRouteDeps } from './http/routes/championships.js';
 import { eventsRouter, type EventsRouteDeps } from './http/routes/events.js';
+import { workerRouter, type WorkerRouteDeps } from './http/routes/worker.js';
 import { workflowRouter, type WorkflowRouteDeps } from './http/routes/workflow.js';
 import type { PublishDeps } from './publishing/service.js';
 
@@ -31,6 +34,10 @@ export interface AppDeps {
   events?: EventsRouteDeps;
   /** Job queue and opportunity retry routes (1.17). */
   workflow?: WorkflowRouteDeps;
+  /** Home-PC worker protocol routes (1.18). */
+  worker?: WorkerRouteDeps;
+  /** Administrator worker, publish-mode, config override and audit routes (1.18). */
+  admin?: AdminRouteDeps;
 }
 
 /**
@@ -48,9 +55,15 @@ export function createApp({
   championships,
   events,
   workflow,
+  worker,
+  admin,
 }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
+  if (env.SMB_TRUST_PROXY > 0) {
+    app.set('trust proxy', env.SMB_TRUST_PROXY);
+  }
+  app.use(securityHeaders());
   app.use(pinoHttp({ logger }));
   app.use(express.json({ limit: '1mb' }));
 
@@ -77,6 +90,12 @@ export function createApp({
 
   if (workflow) {
     app.use(workflowRouter(workflow));
+  }
+  if (worker) {
+    app.use(workerRouter(worker));
+  }
+  if (admin) {
+    app.use(adminRouter(admin));
   }
 
   app.use(notFoundHandler);
