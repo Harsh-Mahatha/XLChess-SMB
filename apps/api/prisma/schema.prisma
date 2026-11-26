@@ -71,6 +71,7 @@ model jobs {
   progress             Json?
   heartbeat_at         DateTime?              @db.Timestamptz(6)
   job_scope            String                 @default("")
+  workers              workers?               @relation(fields: [leased_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "jobs_leased_by_fk")
   post_opportunities   post_opportunities?    @relation(fields: [opportunity_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "jobs_opportunity_fk")
   media_assets         media_assets[]
   opportunity_events   opportunity_events[]
@@ -481,6 +482,7 @@ model review_actions {
   feedback_tags          String[]           @default([])
   idempotency_key        String?            @unique
   created_at             DateTime           @default(now()) @db.Timestamptz(6)
+  actor_role             String?
   answered_by_candidates post_candidates[]  @relation("post_candidates_feedback_action_idToreview_actions")
   answered_by_revisions  post_revisions[]   @relation("post_revisions_review_action_idToreview_actions")
   publications           publications[]
@@ -886,6 +888,57 @@ model event_pollers {
   lease_holder         String?
   updated_at           DateTime    @default(now()) @db.Timestamptz(6)
   post_types           post_types? @relation(fields: [post_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("smb")
+}
+
+model publish_settings {
+  id         Boolean      @id @default(true)
+  mode       publish_mode @default(dry_run)
+  updated_by String       @default("system")
+  reason     String       @default("initial")
+  updated_at DateTime     @default(now()) @db.Timestamptz(6)
+
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model worker_pairing_codes {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code_hash  String    @unique
+  label      String?
+  created_by String
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at DateTime  @db.Timestamptz(6)
+  used_at    DateTime? @db.Timestamptz(6)
+  worker_id  String?   @db.Uuid
+  workers    workers?  @relation(fields: [worker_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("smb")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model workers {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  label                String?
+  hostname             String
+  os                   String                 @default("")
+  worker_version       String
+  gpu                  Json?
+  token_hash           String                 @unique
+  status               Json?
+  paused               Boolean                @default(false)
+  update_required      Boolean                @default(false)
+  paired_at            DateTime               @default(now()) @db.Timestamptz(6)
+  paired_by            String?
+  last_seen_at         DateTime?              @db.Timestamptz(6)
+  revoked_at           DateTime?              @db.Timestamptz(6)
+  revoked_by           String?
+  revoke_reason        String?
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  jobs                 jobs[]
+  worker_pairing_codes worker_pairing_codes[]
 
   @@schema("smb")
 }
