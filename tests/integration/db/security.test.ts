@@ -124,6 +124,15 @@ beforeAll(async () => {
       championships: { verifier: v, db: prisma, resolvers, detectors, logger },
       events: { verifier: v, db: prisma, detectors, logger },
       workflow: { verifier: v, db: prisma },
+      metrics: {
+        verifier: v,
+        db: prisma,
+        config: {
+          timezone: 'UTC',
+          requiredDailyVolume: 1,
+          thresholds: { workerOfflineMinutes: 10, pollerFailures: 3, reviewWaitHours: 6 },
+        },
+      },
       worker: { db: prisma, workflow: workflowDeps, env, logger },
       admin: { verifier: v, db: prisma, configSet, env },
     });
