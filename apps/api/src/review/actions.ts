@@ -130,6 +130,8 @@ export interface ApproveInput {
   scheduledFor?: Date;
   /** Needed when the candidate failed its automatic checks and no person has edited it since. */
   acknowledgeFailedChecks?: boolean;
+  /** Seconds the reviewer reported actively looking at the post before acting (module 1.19). */
+  activeSeconds?: number;
   idempotencyKey?: string;
 }
 
@@ -442,6 +444,7 @@ export async function approveRevision(
           content_hash: bound.content_hash,
           reviewer_id: actor.userId,
           actor_role: actor.role ?? null,
+          active_seconds: input.activeSeconds ?? null,
           channels: channels as never,
           scheduled_for: input.scheduledFor ?? null,
           idempotency_key: key ?? null,
@@ -773,6 +776,8 @@ export interface TransitionInput {
   deferUntil?: Date;
   candidateId?: string;
   revisionId?: string;
+  /** Seconds the reviewer reported actively looking at the post before acting (module 1.19). */
+  activeSeconds?: number;
   idempotencyKey?: string;
 }
 
@@ -888,6 +893,7 @@ export async function transitionOpportunity(
           content_hash: contentHash,
           reviewer_id: actor.userId,
           actor_role: actor.role ?? null,
+          active_seconds: input.activeSeconds ?? null,
           scheduled_for: kind === 'defer' ? (input.deferUntil ?? null) : null,
           feedback: feedback ?? (kind === 'reopen' ? 'Reopened for review' : null),
           feedback_tags: kind === 'reopen' ? [...tags, 'reopen'] : tags,
@@ -987,6 +993,8 @@ export interface ReviseRequestInput {
   baseRevisionId: string;
   feedback?: string;
   feedbackTags?: string[];
+  /** Seconds the reviewer reported actively looking at the post before acting (module 1.19). */
+  activeSeconds?: number;
   idempotencyKey?: string;
 }
 
@@ -1103,6 +1111,7 @@ export async function requestRevision(
           content_hash: base.content_hash,
           reviewer_id: actor.userId,
           actor_role: actor.role ?? null,
+          active_seconds: input.activeSeconds ?? null,
           feedback,
           feedback_tags: tags,
           idempotency_key: key ?? null,

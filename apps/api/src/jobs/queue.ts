@@ -91,7 +91,7 @@ export async function claimJob(db: Db, o: ClaimOptions): Promise<JobRow | null> 
       status = 'leased', lease_id = gen_random_uuid(), leased_by = ${o.workerId ?? null}::uuid,
       lease_expires_at = ${now}::timestamptz + make_interval(secs => ${o.leaseSeconds}),
       heartbeat_at = ${now}::timestamptz, attempts = attempts + 1,
-      started_at = coalesce(started_at, ${now}::timestamptz)
+      started_at = coalesce(started_at, ${now}::timestamptz), attempt_started_at = ${now}::timestamptz
     where id = (
       select id from smb.jobs
       where status = 'queued' and lane = ${o.lane}::smb.job_lane and run_after <= ${now}::timestamptz
@@ -120,6 +120,21 @@ export async function heartbeatJob(
   return n === 1;
 }
 
+/** What one attempt cost (module 1.19). The time defaults to claim-to-now when the worker did not say. */
+export interface AttemptMetrics {
+  durationMs?: number;
+  usage?: unknown;
+}
+
+/** Adds this attempt's time to the job's total and keeps what it used. A `set` clause fragment. */
+function attemptMetricsSql(m: AttemptMetrics, now: Date): Prisma.Sql {
+  const ms = m.durationMs === undefined ? null : Math.max(0, Math.round(m.durationMs));
+  return Prisma.sql`
+      duration_ms = duration_ms + coalesce(${ms}::bigint,
+        greatest(0, (extract(epoch from ${now}::timestamptz - attempt_started_at) * 1000)::bigint), 0),
+      usage = coalesce(${m.usage === undefined ? null : JSON.stringify(m.usage)}::jsonb, usage)`;
+}
+
 export type CompleteOutcome =
   | { outcome: 'completed' }
   /** A second submit for a job that already succeeded: the first outcome stands. */
@@ -133,11 +148,13 @@ export async function completeJob(
   leaseId: string,
   result: unknown,
   now: Date = new Date(),
+  metrics: AttemptMetrics = {},
 ): Promise<CompleteOutcome> {
   const n = await db.$executeRaw`
     update smb.jobs set status = 'succeeded', result = ${JSON.stringify(result ?? {})}::jsonb,
       lease_id = null, leased_by = null, lease_expires_at = null, last_error = null, error_code = null,
-      finished_at = ${now}::timestamptz
+      finished_at = ${now}::timestamptz,
+      ${attemptMetricsSql(metrics, now)}
     where id = ${jobId}::uuid and lease_id = ${leaseId}::uuid and status = 'leased'`;
   if (n === 1) return { outcome: 'completed' };
   const job = await db.jobs.findUnique({ where: { id: jobId } });
@@ -159,6 +176,8 @@ export interface FailInput {
   /** Seconds to wait before the next attempt, when there is one. */
   retryInSeconds?: number;
   now?: Date;
+  /** Time and usage of the failed attempt: it used the GPU too. */
+  metrics?: AttemptMetrics;
 }
 
 export type FailOutcome =
@@ -184,7 +203,8 @@ export async function failJob(
     const runAfter = new Date(now.getTime() + (f.retryInSeconds ?? 60) * 1000);
     const n = await db.$executeRaw`
       update smb.jobs set status = 'queued', lease_id = null, leased_by = null, lease_expires_at = null,
-        run_after = ${runAfter}::timestamptz, last_error = ${message}, error_code = ${f.code}
+        run_after = ${runAfter}::timestamptz, last_error = ${message}, error_code = ${f.code},
+        ${attemptMetricsSql(f.metrics ?? {}, now)}
       where id = ${jobId}::uuid and lease_id = ${leaseId}::uuid and status = 'leased'`;
     return n === 1 ? { outcome: 'requeued', runAfter } : { outcome: 'lease_lost' };
   }
@@ -192,7 +212,7 @@ export async function failJob(
   const n = await db.$executeRaw`
     update smb.jobs set status = ${status}::smb.job_status, lease_id = null, leased_by = null,
       lease_expires_at = null, last_error = ${message}, error_code = ${f.code},
-      finished_at = ${now}::timestamptz
+      finished_at = ${now}::timestamptz, ${attemptMetricsSql(f.metrics ?? {}, now)}
     where id = ${jobId}::uuid and lease_id = ${leaseId}::uuid and status = 'leased'`;
   return n === 1 ? { outcome: status } : { outcome: 'lease_lost' };
 }

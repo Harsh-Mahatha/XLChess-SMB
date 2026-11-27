@@ -3,6 +3,7 @@ import {
   WORKER_PROTOCOL_VERSION,
   promptVersions,
   type ClaimedJob,
+  type JobUsage,
   type WorkerStatusResponse,
 } from '@smb/shared';
 import { ApiError, type WorkerApiClient } from './api-client.js';
@@ -100,6 +101,7 @@ async function submitCompletion(
   result: unknown,
   durationMs: number,
   isStopped: () => boolean,
+  usage?: JobUsage,
 ): Promise<void> {
   const sleep = deps.sleep ?? defaultSleep;
   const now = deps.now ?? Date.now;
@@ -115,6 +117,7 @@ async function submitCompletion(
         leaseId: job.leaseId,
         result,
         durationMs: Math.max(0, Math.round(durationMs)),
+        ...(usage && { usage }),
       });
       if (reply.outcome === 'rejected') {
         log('warn', 'server rejected job result', { jobId: job.jobId, code: reply.code });
@@ -231,7 +234,7 @@ export function startJobLoop(deps: JobLoopDeps): {
       }, hbMs);
       hbTimer.unref?.();
 
-      let executed: { value: unknown; durationMs: number } | undefined;
+      let executed: { value: unknown; durationMs: number; usage?: JobUsage } | undefined;
       let runErr: unknown = undefined;
       let hasRunErr = false;
       try {
@@ -272,7 +275,14 @@ export function startJobLoop(deps: JobLoopDeps): {
         continue;
       }
 
-      await submitCompletion(deps, job, executed!.value, executed!.durationMs, () => stopped);
+      await submitCompletion(
+        deps,
+        job,
+        executed!.value,
+        executed!.durationMs,
+        () => stopped,
+        executed!.usage,
+      );
     }
   };
 

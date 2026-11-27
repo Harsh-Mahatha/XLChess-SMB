@@ -99,6 +99,7 @@ export function reviewRouter({ verifier, read, act }: ReviewRouteDeps): Router {
         channels: body.channels,
         scheduledFor: body.scheduledFor,
         acknowledgeFailedChecks: body.acknowledgeFailedChecks,
+        activeSeconds: body.activeSeconds,
         idempotencyKey: key,
       });
       res.status(result.replayed ? 200 : 201).json(result);
