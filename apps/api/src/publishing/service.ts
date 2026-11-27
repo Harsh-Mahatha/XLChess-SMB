@@ -19,13 +19,9 @@ export interface PublishDeps {
   db: PrismaClient;
   store: ObjectStore;
   channels: ChannelsRegistry;
-  env: Pick<
-    Env,
-    | 'SMB_PUBLISH_MODE'
-    | 'SMB_ALLOW_LIVE_PUBLISH'
-    | 'X_RECONCILE_DELAY_SECONDS'
-    | 'X_RECONCILE_MAX_LOOKUPS'
-  >;
+  env: Pick<Env, 'X_RECONCILE_DELAY_SECONDS' | 'X_RECONCILE_MAX_LOOKUPS'> &
+    Partial<Pick<Env, 'SMB_PUBLISH_MODE' | 'SMB_ALLOW_LIVE_PUBLISH'>>;
+  modeOf: () => Promise<PublishMode>;
   publishers: PublisherDeps;
   logger: Logger;
   now?: () => Date;
@@ -319,6 +315,7 @@ export async function publishPublication(
   publicationId: string,
 ): Promise<PublicationOutcome> {
   const at = deps.now ? deps.now() : new Date();
+  const effectiveMode = await deps.modeOf();
 
   // -----------------------------------------------------------------------------------------------
   // Transaction 1: Claim (short transaction)
@@ -369,7 +366,7 @@ export async function publishPublication(
           db: tx as any,
           store: deps.store,
           channels: deps.channels,
-          env: deps.env,
+          effectiveMode,
           publishers: deps.publishers,
         },
         loadedPost,
@@ -915,6 +912,8 @@ export async function publishDue(
 ): Promise<PublicationOutcome[]> {
   const at = deps.now ? deps.now() : new Date();
   const limit = opts?.limit ?? 10;
+  const effectiveMode = await deps.modeOf();
+  const scopedDeps: PublishDeps = { ...deps, modeOf: async () => effectiveMode };
   const outcomes: PublicationOutcome[] = [];
 
   // Step 1: Backfill missing publications for active approvals
@@ -932,7 +931,7 @@ export async function publishDue(
   for (const opp of activeOpportunities) {
     const approval = opp.review_actions[0];
     if (approval) {
-      await ensurePublications(deps.db, approval.id, deps.env.SMB_PUBLISH_MODE);
+      await ensurePublications(deps.db, approval.id, effectiveMode);
     }
   }
 
@@ -999,7 +998,7 @@ export async function publishDue(
 
   for (const row of pendingDue) {
     try {
-      const outcome = await publishPublication(deps, row.id);
+      const outcome = await publishPublication(scopedDeps, row.id);
       outcomes.push(outcome);
     } catch (err: unknown) {
       deps.logger.error({ err, publicationId: row.id }, 'Error publishing due publication');

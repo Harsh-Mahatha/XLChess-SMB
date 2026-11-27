@@ -208,14 +208,13 @@ The home PC only ever makes **outbound HTTPS** calls to `/worker/v1/*`. It authe
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /worker/v1/pair` | Swap a short-lived pairing code (made by an admin in XLChess, 10-minute TTL, single use) for a device token |
-| `GET  /worker/v1/config` | Desired state: paused, concurrency, model list, prompt/config versions, target worker version |
-| `POST /worker/v1/status` | Device heartbeat: GPU/VRAM/disk, Ollama state, current jobs |
-| `POST /worker/v1/jobs/claim` | Atomically claim the highest-priority eligible `gpu` job (`SKIP LOCKED`). Returns the payload, `leaseId` and `leaseExpiresAt`. |
-| `POST /worker/v1/jobs/:id/heartbeat` | Extend the lease and report progress. The response can say `cancel`. |
-| `POST /worker/v1/jobs/:id/complete` | Submit the result. **Idempotent** on `(jobId, leaseId)`: a duplicate submit returns the first outcome. |
-| `POST /worker/v1/jobs/:id/fail` | Report an error and whether it is retryable |
-| `POST /worker/v1/logs` | Batched log upload, redacted |
+| `POST /worker/v1/pair` | Swap a short-lived pairing code (10-minute TTL, single use, rate-limited per IP and globally) for an opaque `smbw_` device token |
+| `POST /worker/v1/status` | Device heartbeat (GPU/VRAM/disk, Ollama state, version) returning desired worker state |
+| `GET  /worker/v1/config` | Desired state (`paused`, `concurrency`, poll/heartbeat/lease timings, `updateRequired`, `targetWorkerVersion`), server `promptVersions`, and `models` |
+| `POST /worker/v1/jobs/claim` | Atomically claim the highest-priority eligible `gpu` job (`SKIP LOCKED`), preparing inputs at claim time; 204 when paused or empty, 409 `worker_outdated` on version mismatch |
+| `POST /worker/v1/jobs/:id/heartbeat` | Extend the lease and report progress; returns `{ cancel: true }` if the lease was lost, cancelled, or reaped |
+| `POST /worker/v1/jobs/:id/complete` | Validate wire schema & prompt versions, save generation/revision (`recheckGeneration`/`recheckRevision`), mark job succeeded (`already_completed` if idempotent replay), and advance the opportunity |
+| `POST /worker/v1/jobs/:id/fail` | Report a worker error and retryability; applies post-type retry backoff and advances the opportunity |
 
 Recovery:
 - A **lease reaper** in the API finds expired leases, re-queues the job with `attempts+1`, and marks it `dead` after `maxAttempts` (taken from the post type's `retryPolicy`).
@@ -250,11 +249,12 @@ Errors use one shape: `{ error: { code, message, details? } }`. Mutating reviewe
 
 ## 8. Security model (detailed in 1.18)
 
-- **User auth**: verify the XLChess JWT. Algorithm and key (HS256 secret or RS256 JWKS URL), issuer and audience all come from env. *Decided in 1.11 (2026-11-16):* XLChess signs its users in with a session cookie, not a JWT, so the **XLChess backend proxies** reviewer calls and mints a token of at most five minutes for each one (`sub` = the XLChess user id, `smb_role` = `reviewer` for its MANAGER and `admin` for its ADMIN). Roles therefore come from XLChess; SMB keeps no role table for the reviewer routes, so `smb.user_roles` is not needed for them.
-- **Worker auth**: device tokens, as described in §6. A worker token cannot reach `/v1/*`.
-- **Social credentials** stay in the API host's secret env only. They are used only by `publishing/`, never sent to the worker, and never returned by any endpoint. Logger redaction is enforced by a test.
-- **Publish mode**: `dry_run` (the default; records what *would* be posted), `sandbox`, `live`. Setting `live` needs **both** `SMB_ALLOW_LIVE_PUBLISH=true` in env **and** an admin toggle, which is audited.
-- **Audit log**: every privileged action (approve, publish-mode change, pairing, revoke, config override) is written to `smb.audit_log`.
+- **User auth**: verify the XLChess JWT. Algorithm and key (HS256 secret or RS256 JWKS URL), issuer and audience all come from env. *Decided in 1.11 (2026-11-16):* XLChess signs its users in with a session cookie, not a JWT, so the **XLChess backend proxies** reviewer calls and mints a token of at most five minutes for each one (`sub` = the XLChess user id, `smb_role` = `reviewer` for its MANAGER and `admin` for its ADMIN). Every review action stores `review_actions.actor_role` and records `role` in `audit_log`. **Limitation:** publishing does not re-check the approver's current XLChess role with XLChess; roles live in XLChess, and a demoted reviewer's pending approvals can be withdrawn by editing or rejecting the post.
+- **Worker auth**: opaque `smbw_` device tokens (`sha256` stored in `smb.workers.token_hash`), revocable by an admin, scoped to `/worker/v1/*` only. An XLChess JWT cannot reach `/worker/v1/*` and a device token cannot reach `/v1/*`.
+- **Social credentials and environment separation**: `SMB_DEPLOYMENT` (`development` | `staging` | `production`) must match `X_CREDENTIALS_DEPLOYMENT` whenever X credentials are set. Production refuses to start without `NODE_ENV=production`, complete XLChess JWT settings, `SMB_AI_PROVIDER=worker`, and database/Storage configuration. Credentials never leave the API host and are excluded from all responses and logs (`REDACT_PATHS`).
+- **Publish mode**: stored admin toggle (`smb.publish_settings`, starting at `dry_run`), capped by `SMB_PUBLISH_MODE` ceiling. Effective mode = `min(setting, ceiling)`. Reaching `live` requires **all three gates**: `SMB_PUBLISH_MODE=live`, `SMB_ALLOW_LIVE_PUBLISH=true`, and `SMB_DEPLOYMENT=production`, plus explicit `"PUBLISH LIVE"` confirmation on `PUT /v1/admin/publish-mode`. Publication rows keep the mode stamped at approval: lowering the mode pauses higher-mode rows (`mode_not_allowed`, non-permanent) until raised again; raising it does not upgrade existing `dry_run` rows (re-approve to publish for real). `/health` continues to report the env ceiling (`publishMode`); `GET /v1/admin/publish-mode` is the source of truth.
+- **HTTPS, proxies, rate limits, and headers**: `SMB_TRUST_PROXY` configures Express `trust proxy`; `SMB_REQUIRE_HTTPS` (default `true` in production) enforces TLS on `/worker/v1/*`, and the worker client refuses non-HTTPS `apiUrl` values except `localhost`/`127.0.0.1`. In-memory fixed-window rate limits (per API instance in V1) protect `/worker/v1/pair` (5/min per IP, 50/hour global) and authenticated `/worker/v1/*` (120/min per worker). All responses carry baseline security headers (`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cross-Origin-Resource-Policy: same-site`), and `/v1/*` + `/worker/v1/*` carry `Cache-Control: no-store`.
+- **Audit log**: every privileged action (review actions, publish-mode changes, pairing code creation, worker pair/pause/resume/revoke/selftest, config overrides) writes to `smb.audit_log`. New writes go through `writeAudit()`, which deep-scrubs secret-looking keys; `GET /v1/admin/audit` exposes cursor-paged reads to admins.
 - Separate dev and prod Supabase projects, and separate X apps and credentials.
 
 ---
@@ -985,3 +985,109 @@ Admin routes (`admin` role): `GET /v1/admin/jobs`, `POST /v1/admin/jobs/:id/{can
 - 1.19: job counts by kind and status, attempts, time in each step and the dead-job rate come from `smb.jobs` and `smb.opportunity_events`.
 
 **Not in 1.17.** Worker endpoints and device auth (1.18). The XLChess screens for jobs and failures. Data mappings for templates other than `player-vs-player` (those candidates reach review without a graphic). A federation-to-flag table. A refresh path for image discovery that found candidates but chose none.
+
+---
+
+## Security, permissions and the worker protocol (module 1.18)
+
+Code: `apps/api/src/workers/` (`tokens.ts`, `pairing.ts`, `auth.ts`, `protocol.ts`, `admin.ts`), `apps/api/src/http/{security,rate-limit,route-policy}.ts`, `apps/api/src/http/routes/{worker,admin}.ts`, `apps/api/src/publishing/mode.ts`, `apps/api/src/audit.ts`, `apps/worker/src/{jobs,checkpoint,execute,api-client,config,log}.ts`, migration `20261103002600_security_and_workers.sql`. Worker PC security assessment: `docs/security/worker-pc.md`.
+
+### Decisions (D1 to D25)
+
+| Decision | Summary |
+|---|---|
+| **D1–D2: Tokens & pairing codes** | Device tokens are `smbw_` + 32 base64url bytes; only `sha256` is stored in `smb.workers.token_hash`. Pairing codes are 8 chars (`XXXX-XXXX`, excluding `0O1IL`), single-use, 10-min TTL, normalised before hashing; errors `pairing_code_invalid` (400), `pairing_code_used` (409), `pairing_code_expired` (410). |
+| **D3–D4: Pairing tx & worker auth** | Pairing atomically locks the code, creates `workers`, marks the code used, queues `worker_selftest`, and audits `worker.pair`. `authenticateWorker` accepts only `Bearer smbw_...`, rejects revoked tokens with `401 worker_revoked`, and throttles `last_seen_at` updates to 30 s. |
+| **D5–D7: Lanes & claim preparation** | `SMB_AI_PROVIDER=worker` (required in production) leaves GPU jobs for paired workers. `claim` checks `paused` (204), `WORKER_PROTOCOL_VERSION === 1` and `promptVersions()` (`409 worker_outdated`), then claims via `claimJob(..., { forWorker })` and prepares inputs (`buildInputForOpportunity` / `buildRevisionSubject`) onto `jobs.payload.prepared`. |
+| **D8–D10: Heartbeat, complete, fail** | Heartbeat returns `{ cancel: false, leaseExpiresAt }` or `{ cancel: true }` on lost/cancelled/reaped leases (`403 not_your_job` if leased by another worker). Complete validates wire schemas and prompt versions, calls `saveGeneration` / `saveRevision`, marks succeeded, and advances the opportunity. Fail prefixes `worker_`, caps messages at 2000 chars, applies post-type backoff (`workflow/retry.ts`), and advances. |
+| **D11–D13: Status, online & admin** | Status every 30 s (`online` = `last_seen_at > now - 90s`). Admin routes list workers (`osSupported: false` for Windows 10, never `token_hash`), pause/resume, revoke (re-queues leased jobs or marks exhausted ones `dead`), and trigger self-tests. |
+| **D14–D16: Publish mode, env, HTTPS** | Admin setting in `smb.publish_settings`, capped by `SMB_PUBLISH_MODE` ceiling; `live` needs ceiling `live`, `SMB_ALLOW_LIVE_PUBLISH=true`, `SMB_DEPLOYMENT=production`, and `confirm: "PUBLISH LIVE"`. Production enforces auth, `worker` AI provider, DB/Storage, and matching `X_CREDENTIALS_DEPLOYMENT`. Worker API enforces `SMB_REQUIRE_HTTPS`; worker client refuses non-HTTPS except `localhost`/`127.0.0.1`. |
+| **D17–D20: Role, rate limits, headers, redaction** | `review_actions.actor_role` and audit `role` recorded on review actions. In-memory fixed-window rate limits per API instance (`pair`: 5/min/IP, 50/hr global; worker routes: 120/min/worker). Security headers + `no-store`. Extended `REDACT_PATHS`, `writeAudit()` scrubbing, and worker `log()` masking. |
+| **D21–D25: Overrides, audit, policy, protocol** | Admin config override (`GET`/`PUT`/`DELETE`) and version history routes; cursor-paged `GET /v1/admin/audit`; `ROUTE_POLICY` enforced by `security.test.ts`; `WORKER_PROTOCOL_VERSION = 1`. |
+
+### Two-step save-then-complete note (D9)
+
+In `completeWorkerJob`, storing the generation or revision (`saveGeneration` / `saveRevision`) and marking the job succeeded (`completeJob`) are two separate transactions because the save functions open their own transactions (`for update` / advisory locks). If the API crashes between them, the job remains `leased`; the lease reaper re-queues it, the worker runs it again, and the idempotent save functions return the already-stored rows without duplicating data.
+
+### Route matrix (`apps/api/src/http/route-policy.ts`)
+
+| Method | Path | Access |
+|---|---|---|
+| `GET` | `/health` | `public` |
+| `GET` | `/v1/openapi.json` | `public` |
+| `GET` | `/v1/review/queue` | `reviewer` |
+| `GET` | `/v1/opportunities/:id` | `reviewer` |
+| `POST` | `/v1/candidates/:id/revisions` | `reviewer` |
+| `POST` | `/v1/candidates/:id/revise` | `reviewer` |
+| `POST` | `/v1/revisions/:id/approve` | `reviewer` |
+| `POST` | `/v1/opportunities/:id/reject` | `reviewer` |
+| `POST` | `/v1/opportunities/:id/defer` | `reviewer` |
+| `POST` | `/v1/opportunities/:id/regenerate` | `reviewer` |
+| `POST` | `/v1/opportunities/:id/request-research` | `reviewer` |
+| `POST` | `/v1/opportunities/:id/reopen` | `reviewer` |
+| `GET` | `/v1/feedback/tags` | `reviewer` |
+| `GET` | `/v1/feedback/summary` | `reviewer` |
+| `GET` | `/v1/feedback/corrections` | `reviewer` |
+| `GET` | `/v1/publications` | `admin` |
+| `GET` | `/v1/publications/:id` | `admin` |
+| `POST` | `/v1/publications/:id/retry` | `admin` |
+| `POST` | `/v1/publications/:id/reconcile` | `admin` |
+| `POST` | `/v1/publications/:id/resolve` | `admin` |
+| `GET` | `/v1/schedules` | `admin` |
+| `POST` | `/v1/schedules/suspend` | `admin` |
+| `POST` | `/v1/schedules/resume` | `admin` |
+| `GET` | `/v1/scheduler/log` | `admin` |
+| `POST` | `/v1/opportunities/manual` | `admin` |
+| `POST` | `/v1/championships` | `admin` |
+| `GET` | `/v1/championships` | `admin` |
+| `GET` | `/v1/championships/:id` | `admin` |
+| `PATCH` | `/v1/championships/:id` | `admin` |
+| `POST` | `/v1/championships/:id/games` | `admin` |
+| `PATCH` | `/v1/championships/:id/games/:kind/:number` | `admin` |
+| `POST` | `/v1/championships/:id/games/:kind/:number/confirm` | `admin` |
+| `POST` | `/v1/championships/:id/conclude` | `admin` |
+| `POST` | `/v1/championships/:id/phase` | `admin` |
+| `POST` | `/v1/championships/:id/unlock` | `admin` |
+| `POST` | `/v1/championships/:id/flags/:flagId/resolve` | `admin` |
+| `POST` | `/v1/championships/:id/sync` | `admin` |
+| `GET` | `/v1/events` | `admin` |
+| `GET` | `/v1/events/:id` | `admin` |
+| `GET` | `/v1/event-pollers` | `admin` |
+| `POST` | `/v1/event-pollers/:id/run` | `admin` |
+| `PATCH` | `/v1/event-pollers/:id` | `admin` |
+| `GET` | `/v1/admin/jobs` | `admin` |
+| `POST` | `/v1/admin/jobs/:id/cancel` | `admin` |
+| `POST` | `/v1/admin/jobs/:id/reprioritise` | `admin` |
+| `GET` | `/v1/opportunities/:id/workflow` | `admin` |
+| `POST` | `/v1/admin/opportunities/:id/retry` | `admin` |
+| `POST` | `/v1/admin/workers/pairing-codes` | `admin` |
+| `GET` | `/v1/admin/workers` | `admin` |
+| `POST` | `/v1/admin/workers/:id/pause` | `admin` |
+| `POST` | `/v1/admin/workers/:id/resume` | `admin` |
+| `POST` | `/v1/admin/workers/:id/revoke` | `admin` |
+| `POST` | `/v1/admin/workers/:id/selftest` | `admin` |
+| `GET` | `/v1/admin/publish-mode` | `admin` |
+| `PUT` | `/v1/admin/publish-mode` | `admin` |
+| `GET` | `/v1/admin/post-types/:id/config` | `admin` |
+| `PUT` | `/v1/admin/post-types/:id/overrides` | `admin` |
+| `DELETE` | `/v1/admin/post-types/:id/overrides` | `admin` |
+| `GET` | `/v1/admin/configs/versions` | `admin` |
+| `GET` | `/v1/admin/audit` | `admin` |
+| `POST` | `/worker/v1/pair` | `pairing` |
+| `POST` | `/worker/v1/status` | `worker` |
+| `GET` | `/worker/v1/config` | `worker` |
+| `POST` | `/worker/v1/jobs/claim` | `worker` |
+| `POST` | `/worker/v1/jobs/:id/heartbeat` | `worker` |
+| `POST` | `/worker/v1/jobs/:id/complete` | `worker` |
+| `POST` | `/worker/v1/jobs/:id/fail` | `worker` |
+
+### Runbook
+
+- **Pair a PC:** Create a 10-minute single-use code (`POST /v1/admin/workers/pairing-codes`), then run the worker installer on the PC (`setup-xlchess-worker.ps1`) and enter the code. The worker receives a DPAPI-encrypted `smbw_` token and automatically claims its initial `worker_selftest` job.
+- **Revoke a PC:** Call `POST /v1/admin/workers/:id/revoke` with a reason. The token is invalidated immediately (`401 worker_revoked`), leased jobs return to the queue at once (or `dead` if attempts are exhausted), and re-pairing requires `repair-xlchess-worker.ps1 -NewPairing` with a new pairing code.
+- **Raise publish mode (`dry_run` → `sandbox` → `live`):**
+  1. Set the environment ceiling (`SMB_PUBLISH_MODE=sandbox`) and matching X credentials (`X_CREDENTIALS_DEPLOYMENT` matching `SMB_DEPLOYMENT`), then call `PUT /v1/admin/publish-mode` with `{ "mode": "sandbox", "reason": "..." }`.
+  2. For live publishing: set `SMB_DEPLOYMENT=production`, `NODE_ENV=production`, `SMB_AI_PROVIDER=worker`, `SMB_PUBLISH_MODE=live`, `SMB_ALLOW_LIVE_PUBLISH=true`, and production X credentials (`X_CREDENTIALS_DEPLOYMENT=production`), then call `PUT /v1/admin/publish-mode` with `{ "mode": "live", "reason": "...", "confirm": "PUBLISH LIVE" }`.
+- **When a worker shows `updateRequired`:** Deploy the updated worker bundle matching the server's `@smb/shared` prompt/protocol versions on the PC (e.g. `update-xlchess-worker.ps1`), then restart the service. Once its `claim` sends matching `protocolVersion` and `promptVersions`, `updateRequired` clears automatically.
+
+**Not in 1.18.** XLChess proxy routes and admin screens (separate repo). `POST /worker/v1/logs`, prompt/model admin routes (`/v1/admin/prompts`, `PUT /v1/admin/workers/:id/models`), device-token rotation (revoke and re-pair instead), and re-checking an approver's XLChess role at publish time.

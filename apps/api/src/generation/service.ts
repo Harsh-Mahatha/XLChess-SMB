@@ -65,6 +65,16 @@ async function existing(
   };
 }
 
+/** Returns already-stored candidates for this story selection or regeneration feedback request, if any. */
+export async function storedGeneration(
+  db: Prisma.TransactionClient | PrismaClient,
+  opts: { selectionId: string; newCycle?: boolean; feedbackActionId?: string },
+): Promise<StoredGeneration | undefined> {
+  if (!opts.newCycle) return existing(db, { story_selection_id: opts.selectionId });
+  if (opts.feedbackActionId) return existing(db, { feedback_action_id: opts.feedbackActionId });
+  return undefined;
+}
+
 /** Hash that approval will bind to: the content, its assets (none yet) and the template. */
 export function revisionHash(r: {
   headline: string;
@@ -207,11 +217,11 @@ export async function generateCandidates(
     { withFeedback: options.newCycle },
   );
   const asked = input.reviewerFeedback?.actionId;
-  const already = !options.newCycle
-    ? await existing(deps.db, { story_selection_id: selectionId })
-    : asked
-      ? await existing(deps.db, { feedback_action_id: asked })
-      : undefined;
+  const already = await storedGeneration(deps.db, {
+    selectionId,
+    newCycle: options.newCycle,
+    feedbackActionId: asked,
+  });
   if (already) return already;
   const result = await runGeneration(deps.provider, input, options);
   return saveGeneration(deps.db, input, selectionId, result, options);

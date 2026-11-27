@@ -1,9 +1,20 @@
+import { z } from 'zod';
 import {
+  ClaimedJob,
+  CompleteResponse,
+  HeartbeatResponse,
+  WorkerConfigResponse,
   WorkerPairResponse,
   WorkerStatusResponse,
+  type ClaimRequest,
+  type CompleteRequest,
+  type FailRequest,
+  type HeartbeatRequest,
   type WorkerPairRequest,
   type WorkerStatusRequest,
 } from '@smb/shared';
+
+const FailResponse = z.object({ outcome: z.string() });
 
 /** The server said no in a way the owner can act on (wrong, expired or used pairing code). */
 export class ApiError extends Error {
@@ -37,16 +48,20 @@ export class WorkerApiClient {
     this.timeoutMs = o.timeoutMs ?? 20_000;
   }
 
-  private async post(path: string, body: unknown): Promise<unknown> {
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+  ): Promise<{ status: number; json: unknown }> {
     let res: Response;
     try {
       res = await this.fetchImpl(`${this.baseUrl}${path}`, {
-        method: 'POST',
+        method,
         headers: {
-          'content-type': 'application/json',
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
           ...(this.o.token ? { authorization: `Bearer ${this.o.token}` } : {}),
         },
-        body: JSON.stringify(body),
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
@@ -67,20 +82,59 @@ export class WorkerApiClient {
         err?.message ?? `HTTP ${res.status}`,
       );
     }
-    return json;
+    return { status: res.status, json };
   }
 
-  async pair(req: WorkerPairRequest): Promise<WorkerPairResponse> {
-    const parsed = WorkerPairResponse.safeParse(await this.post('/worker/v1/pair', req));
-    if (!parsed.success)
-      throw new ApiError(502, 'bad_response', 'the server sent an invalid pairing reply');
+  private async get(path: string): Promise<{ status: number; json: unknown }> {
+    return this.request('GET', path);
+  }
+
+  private async post(path: string, body: unknown): Promise<{ status: number; json: unknown }> {
+    return this.request('POST', path, body);
+  }
+
+  private parse<T>(schema: z.ZodType<T>, data: unknown, what: string): T {
+    const parsed = schema.safeParse(data);
+    if (!parsed.success) {
+      throw new ApiError(502, 'bad_response', `the server sent an invalid ${what} reply`);
+    }
     return parsed.data;
   }
 
+  async pair(req: WorkerPairRequest): Promise<WorkerPairResponse> {
+    const { json } = await this.post('/worker/v1/pair', req);
+    return this.parse(WorkerPairResponse, json, 'pairing');
+  }
+
   async status(req: WorkerStatusRequest): Promise<WorkerStatusResponse> {
-    const parsed = WorkerStatusResponse.safeParse(
-      (await this.post('/worker/v1/status', req)) ?? {},
-    );
+    const { json } = await this.post('/worker/v1/status', req);
+    const parsed = WorkerStatusResponse.safeParse(json ?? {});
     return parsed.success ? parsed.data : {};
+  }
+
+  async config(): Promise<WorkerConfigResponse> {
+    const { json } = await this.get('/worker/v1/config');
+    return this.parse(WorkerConfigResponse, json, 'config');
+  }
+
+  async claim(req: ClaimRequest): Promise<ClaimedJob | null> {
+    const { status, json } = await this.post('/worker/v1/jobs/claim', req);
+    if (status === 204) return null;
+    return this.parse(ClaimedJob, json, 'claim');
+  }
+
+  async heartbeat(jobId: string, req: HeartbeatRequest): Promise<HeartbeatResponse> {
+    const { json } = await this.post(`/worker/v1/jobs/${jobId}/heartbeat`, req);
+    return this.parse(HeartbeatResponse, json, 'heartbeat');
+  }
+
+  async complete(jobId: string, req: CompleteRequest): Promise<CompleteResponse> {
+    const { json } = await this.post(`/worker/v1/jobs/${jobId}/complete`, req);
+    return this.parse(CompleteResponse, json, 'complete');
+  }
+
+  async fail(jobId: string, req: FailRequest): Promise<{ outcome: string }> {
+    const { json } = await this.post(`/worker/v1/jobs/${jobId}/fail`, req);
+    return this.parse(FailResponse, json, 'fail');
   }
 }

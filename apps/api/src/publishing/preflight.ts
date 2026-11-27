@@ -6,10 +6,10 @@ import { revisionHash } from '../generation/service.js';
 import { AssetLicenceError, assertAssetsLicensed } from '../images/guard.js';
 import { AssetIntegrityError, ensureAssetsIntact } from '../assets/guard.js';
 import { channelPreviews } from '../review/previews.js';
+import { isModeAllowed } from './mode.js';
 import { publisherFor, PublisherDeps } from './registry.js';
 import { matchKey } from './x/text.js';
 import type { ApprovedPost } from './types.js';
-import type { Env } from '../env.js';
 
 export interface PreflightProblem {
   code: string;
@@ -21,7 +21,7 @@ export interface PreflightDeps {
   db: PrismaClient;
   store: ObjectStore;
   channels: ChannelsRegistry;
-  env: Pick<Env, 'SMB_PUBLISH_MODE' | 'SMB_ALLOW_LIVE_PUBLISH'>;
+  effectiveMode: PublishMode;
   publishers: PublisherDeps;
 }
 
@@ -427,31 +427,18 @@ export async function checkScheduleAndInstruction(
   return { isDue: true };
 }
 
-/** Mode safety check (D2): ensure publish mode is permitted by the runtime environment. */
+/** Mode safety check (D14): ensure publication mode is permitted by the effective publish mode. */
 export function checkModeAllowed(
-  env: Pick<Env, 'SMB_PUBLISH_MODE' | 'SMB_ALLOW_LIVE_PUBLISH'>,
+  effective: PublishMode,
   mode: PublishMode,
 ): PreflightProblem | null {
-  if (mode === 'live') {
-    if (env.SMB_PUBLISH_MODE !== 'live' || !env.SMB_ALLOW_LIVE_PUBLISH) {
-      return {
-        code: 'mode_not_allowed',
-        message: 'Publication mode is live but current environment does not allow live publishing',
-        permanent: false,
-      };
-    }
+  if (!isModeAllowed(effective, mode)) {
+    return {
+      code: 'mode_not_allowed',
+      message: `Publication mode '${mode}' is not allowed while effective publish mode is '${effective}'`,
+      permanent: false,
+    };
   }
-
-  if (mode === 'sandbox') {
-    if (env.SMB_PUBLISH_MODE !== 'sandbox' && env.SMB_PUBLISH_MODE !== 'live') {
-      return {
-        code: 'mode_not_allowed',
-        message: 'Publication mode is sandbox but current environment is dry_run',
-        permanent: false,
-      };
-    }
-  }
-
   return null;
 }
 
@@ -494,7 +481,7 @@ export async function preflight(
   if (schedule.problem) problems.push(schedule.problem);
 
   // Mode check
-  const pMode = checkModeAllowed(deps.env, post.mode);
+  const pMode = checkModeAllowed(deps.effectiveMode, post.mode);
   if (pMode) problems.push(pMode);
 
   return {

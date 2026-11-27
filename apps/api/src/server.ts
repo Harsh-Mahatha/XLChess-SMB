@@ -5,7 +5,7 @@ import { getDb } from './db/client.js';
 import { eventsLoopSettings, loadEnv, xCredentialsFromEnv } from './env.js';
 import { createLogger } from './logger.js';
 import { SupabaseObjectStore } from './storage/index.js';
-import { XClient, XPublisher, type PublishDeps } from './publishing/index.js';
+import { XClient, XPublisher, effectivePublishMode, type PublishDeps } from './publishing/index.js';
 import { ContextResolvers, runSchedulerTick, startLoop } from './scheduling/index.js';
 import { championshipDetector, championshipResolver } from './championship/index.js';
 import { DetectorRegistry, runEventPoll } from './events/index.js';
@@ -17,7 +17,9 @@ import {
   runWorkflowTick,
 } from './workflow/index.js';
 import { publishDue } from './publishing/index.js';
+import type { AdminRouteDeps } from './http/routes/admin.js';
 import type { WorkflowRouteDeps } from './http/routes/workflow.js';
+import type { WorkerRouteDeps } from './http/routes/worker.js';
 import type { ChampionshipRouteDeps } from './http/routes/championships.js';
 import type { EventsRouteDeps } from './http/routes/events.js';
 
@@ -77,9 +79,14 @@ let events: EventsRouteDeps | undefined;
 let schedulerLoop: { stop(): void } | undefined;
 let eventsLoop: { stop(): void } | undefined;
 let workflowRoutes: WorkflowRouteDeps | undefined;
+let workerRoutes: WorkerRouteDeps | undefined;
+let adminRoutes: AdminRouteDeps | undefined;
+let startupEffectiveMode = env.SMB_PUBLISH_MODE;
 const stoppers: { stop(): void }[] = [];
 if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
   const db = await getDb();
+  const modeOf = () => effectivePublishMode(db, env);
+  startupEffectiveMode = await modeOf();
   const store = new SupabaseObjectStore({
     url: env.SUPABASE_URL,
     serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -98,6 +105,8 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
     gateway: sourceGateway,
   });
   workflowRoutes = { verifier, db };
+  workerRoutes = { db, workflow: workflowDeps, env, logger };
+  adminRoutes = { verifier, db, configSet, env };
   review = {
     verifier,
     read: { db, store, channels: configSet.channels, signedUrlSeconds: env.SMB_SIGNED_URL_SECONDS },
@@ -106,6 +115,7 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
       store,
       channels: configSet.channels,
       publishMode: env.SMB_PUBLISH_MODE,
+      publishModeOf: modeOf,
       // An edit that changes a graphic's words gets a new graphic straight away (1.17).
       rerender: async (candidateId: string, revisionId: string) => {
         const r = await renderForRevision(workflowDeps, candidateId, revisionId);
@@ -118,6 +128,7 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
     store,
     channels: configSet.channels,
     env,
+    modeOf,
     publishers: { x: xPublisher },
     logger,
   };
@@ -218,13 +229,17 @@ const app = createApp({
   championships,
   events,
   workflow: workflowRoutes,
+  worker: workerRoutes,
+  admin: adminRoutes,
 });
 
 const server = app.listen(env.PORT, () => {
   logger.info(
     {
       port: env.PORT,
-      publishMode: env.SMB_PUBLISH_MODE,
+      deployment: env.SMB_DEPLOYMENT,
+      publishModeCeiling: env.SMB_PUBLISH_MODE,
+      effectivePublishMode: startupEffectiveMode,
       xCredentialsConfigured: Boolean(xCreds),
       xApiBaseHost: xBaseUrl.hostname,
     },

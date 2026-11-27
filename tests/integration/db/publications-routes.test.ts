@@ -260,6 +260,7 @@ beforeAll(async () => {
       X_RECONCILE_DELAY_SECONDS: 60,
       X_RECONCILE_MAX_LOOKUPS: 5,
     },
+    modeOf: async () => 'sandbox',
     publishers: { x: xPublisher },
     logger: pino({ level: 'silent' }),
   };

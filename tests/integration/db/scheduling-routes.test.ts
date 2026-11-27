@@ -45,9 +45,10 @@ beforeAll(async () => {
 
   verifier = createTokenVerifier({
     alg: 'HS256',
-    secret: 'test-secret-test-secret-test-secret',
+    key: secret,
     issuer: 'xlchess',
     audience: 'smb',
+    userIdClaim: 'sub',
   });
 
   const resolvers = new ContextResolvers();
@@ -157,7 +158,9 @@ describe('scheduling administration routes', () => {
 
     // Seed a schedule row
     await prisma.schedules.upsert({
-      where: { post_type_id_rule_key: { post_type_id: '1.1', rule_key: 'base|UTC|weekly|fri|09:00' } },
+      where: {
+        post_type_id_rule_key: { post_type_id: '1.1', rule_key: 'base|UTC|weekly|fri|09:00' },
+      },
       create: {
         post_type_id: '1.1',
         rule_key: 'base|UTC|weekly|fri|09:00',

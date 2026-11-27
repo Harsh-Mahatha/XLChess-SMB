@@ -7,6 +7,7 @@ import { loadConfigSet } from '../config/loader.js';
 import { InMemoryObjectStore, SupabaseObjectStore, type ObjectStore } from '../storage/index.js';
 import { XClient } from './x/client.js';
 import { XPublisher } from './x/adapter.js';
+import { effectivePublishMode } from './mode.js';
 import { publishDue, publishPublication, reconcilePublication } from './service.js';
 
 const { positionals, values } = parseArgs({
@@ -54,6 +55,7 @@ const deps = {
   store,
   channels: configSet.channels,
   env,
+  modeOf: () => effectivePublishMode(db, env),
   publishers: { x: xPublisher },
   logger,
 };

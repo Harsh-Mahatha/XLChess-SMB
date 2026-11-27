@@ -1,5 +1,5 @@
 import { statfsSync } from 'node:fs';
-import type { WorkerStatusRequest } from '@smb/shared';
+import type { WorkerStatusRequest, WorkerStatusResponse } from '@smb/shared';
 import { ApiError, type WorkerApiClient } from './api-client.js';
 import type { GpuMonitor } from './gpu.js';
 import { log } from './log.js';
@@ -13,6 +13,7 @@ export interface HeartbeatSources {
   gpu: GpuMonitor;
   ollamaUp: () => Promise<boolean>;
   dataDir: string;
+  onStatus?: (reply: WorkerStatusResponse) => void;
 }
 
 function diskFreeMiB(dir: string): number | undefined {
@@ -47,7 +48,8 @@ export function startHeartbeat(src: HeartbeatSources, everyMs = 30_000): () => v
   const tick = (): void => {
     void buildStatus(src)
       .then((s) => src.client.status(s))
-      .then(() => {
+      .then((reply) => {
+        src.onStatus?.(reply);
         if (failing) log('info', 'reconnected to the SMB API');
         failing = false;
       })

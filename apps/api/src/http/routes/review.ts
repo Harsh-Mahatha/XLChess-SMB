@@ -65,7 +65,7 @@ export function reviewRouter({ verifier, read, act }: ReviewRouteDeps): Router {
     const { id } = IdParam.parse(req.params);
     const body = EditBody.parse(req.body);
     try {
-      const result = await editCandidate(act, { userId: actorOf(res).userId }, id, body);
+      const result = await editCandidate(act, actorOf(res), id, body);
       res.status(201).json(result);
     } catch (err) {
       translate(err);
@@ -78,7 +78,7 @@ export function reviewRouter({ verifier, read, act }: ReviewRouteDeps): Router {
     const body = ReviseBody.parse(req.body);
     const key = idempotencyKey(req);
     try {
-      const result = await requestRevision(act, { userId: actorOf(res).userId }, id, {
+      const result = await requestRevision(act, actorOf(res), id, {
         ...body,
         idempotencyKey: key,
       });
@@ -93,18 +93,14 @@ export function reviewRouter({ verifier, read, act }: ReviewRouteDeps): Router {
     const body = ApproveBody.parse(req.body);
     const key = idempotencyKey(req);
     try {
-      const result = await approveRevision(
-        act,
-        { userId: actorOf(res).userId },
-        {
-          revisionId: id,
-          contentHash: body.contentHash,
-          channels: body.channels,
-          scheduledFor: body.scheduledFor,
-          acknowledgeFailedChecks: body.acknowledgeFailedChecks,
-          idempotencyKey: key,
-        },
-      );
+      const result = await approveRevision(act, actorOf(res), {
+        revisionId: id,
+        contentHash: body.contentHash,
+        channels: body.channels,
+        scheduledFor: body.scheduledFor,
+        acknowledgeFailedChecks: body.acknowledgeFailedChecks,
+        idempotencyKey: key,
+      });
       res.status(result.replayed ? 200 : 201).json(result);
     } catch (err) {
       translate(err);
@@ -124,7 +120,7 @@ export function reviewRouter({ verifier, read, act }: ReviewRouteDeps): Router {
       const body = ActionBody.parse(req.body ?? {});
       const key = idempotencyKey(req);
       try {
-        const result = await transitionOpportunity(act, { userId: actorOf(res).userId }, id, kind, {
+        const result = await transitionOpportunity(act, actorOf(res), id, kind, {
           ...body,
           idempotencyKey: key,
         });
