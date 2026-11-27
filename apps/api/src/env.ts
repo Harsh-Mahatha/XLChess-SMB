@@ -40,6 +40,25 @@ const EnvSchema = z.object({
   SMB_WORKFLOW_TICK_SECONDS: z.coerce.number().int().min(5).max(600).default(15),
   /** Server-lane jobs run at once. The gpu lane is claimed by workers, or runs here with SMB_AI_PROVIDER=stub. */
   SMB_RUNNER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+  /** Timezone that decides which day a post belongs to in the KPI figures and the ten-day goal (1.19). */
+  SMB_KPI_TIMEZONE: z
+    .string()
+    .default('UTC')
+    .refine((tz) => {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: tz });
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'must be an IANA timezone such as UTC or Europe/London'),
+  /** Posts that must reach review in a day for that day to count towards the ten-day goal (1.19). */
+  SMB_KPI_REQUIRED_DAILY_VOLUME: z.coerce.number().int().min(1).max(1000).default(1),
+  /** How often active problems are checked and logged when they open or clear (1.19). Runs with the workflow. */
+  SMB_ALERT_INTERVAL_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
+  SMB_ALERT_WORKER_OFFLINE_MINUTES: z.coerce.number().int().min(1).max(1440).default(10),
+  SMB_ALERT_POLLER_FAILURES: z.coerce.number().int().min(1).max(100).default(3),
+  SMB_ALERT_REVIEW_WAIT_HOURS: z.coerce.number().min(0.5).max(720).default(6),
   /** Sends approved posts that are due (publishDue). Off by default. */
   SMB_PUBLISHER_ENABLED: bool.default('false'),
   SMB_PUBLISH_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3600).default(30),

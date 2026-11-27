@@ -16,6 +16,7 @@
     "candidates:generate": "tsx --env-file-if-exists=../../.env src/generation/cli.ts",
     "candidates:revise": "tsx --env-file-if-exists=../../.env src/generation/revise-cli.ts",
     "feedback:report": "tsx --env-file-if-exists=../../.env src/review/feedback-cli.ts",
+    "metrics:report": "tsx --env-file-if-exists=../../.env src/metrics/cli.ts",
     "images:discover": "tsx --env-file-if-exists=../../.env src/images/cli.ts",
     "assets:verify": "tsx --env-file-if-exists=../../.env src/assets/cli.ts verify",
     "assets:purge": "tsx --env-file-if-exists=../../.env src/assets/cli.ts purge",

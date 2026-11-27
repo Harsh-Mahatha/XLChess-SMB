@@ -309,8 +309,31 @@ export async function ensurePublications(
   return count;
 }
 
-/** Exactly-once publishing flow for a single publication. */
+/**
+ * Exactly-once publishing flow for a single publication. A failure or an unknown outcome is logged as one
+ * structured line (`publication.failed`, `publication.uncertain`) so the log shows operational failures.
+ */
 export async function publishPublication(
+  deps: PublishDeps,
+  publicationId: string,
+): Promise<PublicationOutcome> {
+  const outcome = await sendPublication(deps, publicationId);
+  if (outcome.status === 'failed' || outcome.status === 'uncertain') {
+    deps.logger[outcome.status === 'uncertain' ? 'error' : 'warn'](
+      {
+        event: `publication.${outcome.status}`,
+        publicationId,
+        channel: outcome.channel,
+        mode: outcome.mode,
+        refused: outcome.outcome === 'refused' ? true : undefined,
+      },
+      `publication ${outcome.status}`,
+    );
+  }
+  return outcome;
+}
+
+async function sendPublication(
   deps: PublishDeps,
   publicationId: string,
 ): Promise<PublicationOutcome> {

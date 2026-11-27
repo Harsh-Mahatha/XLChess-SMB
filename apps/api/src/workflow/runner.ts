@@ -48,22 +48,27 @@ export async function processJob(deps: WorkflowDeps, job: JobRow): Promise<RunOu
     outcome = { jobId: job.id, kind: job.kind, outcome: done.outcome };
   } catch (err) {
     const c = classifyError(err);
-    deps.logger.warn(
-      {
-        jobId: job.id,
-        kind: job.kind,
-        attempt: job.attempts,
-        code: c.code,
-        retryable: c.retryable,
-        err,
-      },
-      'job failed',
-    );
     const failed = await failJob(deps.db, job.id, leaseId, {
       ...c,
       retryInSeconds: await backoffFor(deps.db, job, job.attempts),
       now: nowOf(deps),
     });
+    // One structured line per failed attempt; `final` says whether the job will not be tried again.
+    const final = failed.outcome === 'dead' || failed.outcome === 'failed';
+    deps.logger[final ? 'error' : 'warn'](
+      {
+        event: 'job.failed',
+        jobId: job.id,
+        kind: job.kind,
+        opportunityId: job.opportunity_id,
+        attempt: job.attempts,
+        code: c.code,
+        retryable: c.retryable,
+        final,
+        err,
+      },
+      'job failed',
+    );
     outcome = {
       jobId: job.id,
       kind: job.kind,

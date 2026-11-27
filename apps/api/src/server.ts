@@ -17,6 +17,8 @@ import {
   runWorkflowTick,
 } from './workflow/index.js';
 import { publishDue } from './publishing/index.js';
+import { createAlertWatcher, runAlertCheck, type MetricsConfig } from './metrics/index.js';
+import type { MetricsRouteDeps } from './http/routes/metrics.js';
 import type { AdminRouteDeps } from './http/routes/admin.js';
 import type { WorkflowRouteDeps } from './http/routes/workflow.js';
 import type { WorkerRouteDeps } from './http/routes/worker.js';
@@ -79,6 +81,7 @@ let events: EventsRouteDeps | undefined;
 let schedulerLoop: { stop(): void } | undefined;
 let eventsLoop: { stop(): void } | undefined;
 let workflowRoutes: WorkflowRouteDeps | undefined;
+let metricsRoutes: MetricsRouteDeps | undefined;
 let workerRoutes: WorkerRouteDeps | undefined;
 let adminRoutes: AdminRouteDeps | undefined;
 let startupEffectiveMode = env.SMB_PUBLISH_MODE;
@@ -105,6 +108,16 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
     gateway: sourceGateway,
   });
   workflowRoutes = { verifier, db };
+  const metricsConfig: MetricsConfig = {
+    timezone: env.SMB_KPI_TIMEZONE,
+    requiredDailyVolume: env.SMB_KPI_REQUIRED_DAILY_VOLUME,
+    thresholds: {
+      workerOfflineMinutes: env.SMB_ALERT_WORKER_OFFLINE_MINUTES,
+      pollerFailures: env.SMB_ALERT_POLLER_FAILURES,
+      reviewWaitHours: env.SMB_ALERT_REVIEW_WAIT_HOURS,
+    },
+  };
+  metricsRoutes = { verifier, db, config: metricsConfig };
   workerRoutes = { db, workflow: workflowDeps, env, logger };
   adminRoutes = { verifier, db, configSet, env };
   review = {
@@ -146,6 +159,20 @@ if (env.DATABASE_URL && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY) {
         name: 'job-runner',
         intervalMs: 5000,
         run: () => runAvailableJobs(workflowDeps, { concurrency: env.SMB_RUNNER_CONCURRENCY }),
+        logger,
+      }),
+    );
+  }
+  // 1.19: log a line when a problem opens and when it clears (a worker gone, dead jobs, an uncertain post, ...).
+  if (env.SMB_WORKFLOW_ENABLED) {
+    const watch = createAlertWatcher(logger);
+    stoppers.push(
+      startLoop({
+        name: 'alerts',
+        intervalMs: env.SMB_ALERT_INTERVAL_SECONDS * 1000,
+        run: async () => {
+          await runAlertCheck(db, metricsConfig.thresholds, watch);
+        },
         logger,
       }),
     );
@@ -229,6 +256,7 @@ const app = createApp({
   championships,
   events,
   workflow: workflowRoutes,
+  metrics: metricsRoutes,
   worker: workerRoutes,
   admin: adminRoutes,
 });

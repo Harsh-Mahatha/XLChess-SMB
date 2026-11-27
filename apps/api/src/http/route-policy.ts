@@ -77,6 +77,16 @@ export const ROUTE_POLICY: readonly RoutePolicyEntry[] = [
   { method: 'GET', path: '/v1/opportunities/:id/workflow', access: 'admin' },
   { method: 'POST', path: '/v1/admin/opportunities/:id/retry', access: 'admin' },
 
+  // Monitoring, cost and quality KPIs (admin)
+  { method: 'GET', path: '/v1/admin/metrics/dashboard', access: 'admin' },
+  { method: 'GET', path: '/v1/admin/metrics/streak', access: 'admin' },
+  { method: 'GET', path: '/v1/admin/metrics/operations', access: 'admin' },
+  { method: 'GET', path: '/v1/admin/metrics/cost', access: 'admin' },
+  { method: 'GET', path: '/v1/admin/metrics/health', access: 'admin' },
+  { method: 'GET', path: '/v1/admin/metrics/opportunities/:id/cost', access: 'admin' },
+  { method: 'GET', path: '/v1/admin/cost-rates', access: 'admin' },
+  { method: 'PUT', path: '/v1/admin/cost-rates', access: 'admin' },
+
   // Admin: workers, publish mode, config overrides, audit (admin)
   { method: 'POST', path: '/v1/admin/workers/pairing-codes', access: 'admin' },
   { method: 'GET', path: '/v1/admin/workers', access: 'admin' },

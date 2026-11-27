@@ -66,6 +66,8 @@ import {
   SetPublishModeBody,
   WorkerIdParam,
 } from './routes/admin.js';
+import { MetricsIdParam, MetricsQuery } from './routes/metrics.js';
+import { CostRateBody } from '../metrics/cost.js';
 
 extendZodWithOpenApi(z);
 
@@ -755,6 +757,81 @@ registry.registerPath({
   security: secured,
   request: { query: ListAuditQuery },
   responses: { 200: ok('Audit log entries'), ...errors },
+});
+
+// Monitoring, cost and quality KPIs (module 1.19). Admin-only.
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/metrics/dashboard',
+  tags: ['admin'],
+  summary:
+    'Everything the KPI dashboard shows for the last N days: the ten-day streak, quality, operations, cost per approved post and health alerts',
+  security: secured,
+  request: { query: MetricsQuery },
+  responses: { 200: ok('Dashboard figures'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/metrics/streak',
+  tags: ['admin'],
+  summary:
+    'Day-by-day unedited-approval record and the current and best streak. Rejected posts count towards each day; days under the required volume are not evaluated',
+  security: secured,
+  request: { query: MetricsQuery },
+  responses: { 200: ok('Streak report'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/metrics/operations',
+  tags: ['admin'],
+  summary:
+    'Opportunities, jobs, failures, queues, publication success and duplicate prevention for the last N days',
+  security: secured,
+  request: { query: MetricsQuery },
+  responses: { 200: ok('Operational figures'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/metrics/cost',
+  tags: ['admin'],
+  summary: 'Compute, review time, hosting and the cost per approved post for the last N days',
+  security: secured,
+  request: { query: MetricsQuery },
+  responses: { 200: ok('Cost figures'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/metrics/health',
+  tags: ['admin'],
+  summary: 'Active problems, workers with their current job, and event pollers',
+  security: secured,
+  responses: { 200: ok('Health report'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/metrics/opportunities/{id}/cost',
+  tags: ['admin'],
+  summary: 'What one post cost to write and review: GPU time, tokens, compute and review time',
+  security: secured,
+  request: { params: MetricsIdParam },
+  responses: { 200: ok('Cost of one post'), ...errors },
+});
+registry.registerPath({
+  method: 'get',
+  path: '/v1/admin/cost-rates',
+  tags: ['admin'],
+  summary: 'The price lists behind the cost figures, oldest first',
+  security: secured,
+  responses: { 200: ok('Price lists'), ...errors },
+});
+registry.registerPath({
+  method: 'put',
+  path: '/v1/admin/cost-rates',
+  tags: ['admin'],
+  summary: 'Add a price list from today (or a later day). Unset prices carry over. Audited',
+  security: secured,
+  request: { body: { content: { 'application/json': { schema: CostRateBody } } } },
+  responses: { 201: ok('Price list added'), ...errors },
 });
 
 /** Route modules register their paths on `registry`; XLChess generates its typed client from this document. */
