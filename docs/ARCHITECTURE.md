@@ -1091,3 +1091,50 @@ In `completeWorkerJob`, storing the generation or revision (`saveGeneration` / `
 - **When a worker shows `updateRequired`:** Deploy the updated worker bundle matching the server's `@smb/shared` prompt/protocol versions on the PC (e.g. `update-xlchess-worker.ps1`), then restart the service. Once its `claim` sends matching `protocolVersion` and `promptVersions`, `updateRequired` clears automatically.
 
 **Not in 1.18.** XLChess proxy routes and admin screens (separate repo). `POST /worker/v1/logs`, prompt/model admin routes (`/v1/admin/prompts`, `PUT /v1/admin/workers/:id/models`), device-token rotation (revoke and re-pair instead), and re-checking an approver's XLChess role at publish time.
+
+---
+
+## Monitoring, cost and quality KPIs (module 1.19)
+
+Code: `apps/api/src/metrics/` (`window`, `streak`, `quality`, `operations`, `cost`, `health`, `cli`), `apps/api/src/http/routes/metrics.ts`, `packages/shared/src/metrics` (the pure rules), migration `20261103002700_monitoring_kpis.sql`. Terminal view: `npm run metrics:report -- --days 30`.
+
+Everything is **computed on read** from records that already exist, as in 1.12: there are no snapshot tables and nothing is written to `smb.post_metrics` in V1. A changed definition therefore never leaves stale figures behind.
+
+### Decisions
+
+| Decision | Summary |
+|---|---|
+| **Which day a post belongs to** | The day it first became ready for review, in `SMB_KPI_TIMEZONE` (default `UTC`). Day boundaries are worked out by the database, so daylight saving is handled by the zone rules. |
+| **Clean post** | Approved exactly as the model first wrote it, with no regeneration, no rewrite request and no research request (`smb.review_outcome_metrics.clean`). The ten-day streak counts only clean posts. The looser "unedited" rate from 1.12 is shown beside it. |
+| **Day status** | `clean`: enough posts, all decided, every one clean. `broken`: enough posts and at least one decided post was rejected, edited, regenerated, sent for research or failed. `incomplete`: nothing broken yet but some posts are undecided; it neither counts nor breaks. `below_volume`: fewer posts than `SMB_KPI_REQUIRED_DAILY_VOLUME`; not evaluated. Rejected posts count towards the volume and towards the day's result, so they can never be left out. A deferred post stays undecided, so its day stays `incomplete` until it is decided. |
+| **Streak** | Consecutive `clean` days counted back from the latest evaluated day; `below_volume` and `incomplete` days are skipped. The goal is 10 (`goalReached`). The window is the last `days` days, so `windowLimited` says when the streak may be longer than shown. The same figures are given per post type. |
+| **Review effort** | The XLChess review page sends `activeSeconds` (time the page was open and focused, 0 to 7200) with approve, reject, defer, regenerate, request-research, reopen and rewrite actions; it is stored in `review_actions.active_seconds`. Reports give the median and 90th percentile of active time per post, and, separately, of the elapsed time to the decision (which includes waiting and so overstates the effort). Nothing is invented for posts with no reported time. |
+| **Image replacement** | A decided post counts when a reviewer used an image tag (`wrong_image`, `image_quality`, `image_crop`) on any action or edit, or when the approved revision's photographs differ from those of the first text of the same candidate. There is no "swap picture" action yet. |
+| **Usage** | `CompleteRequest` and `FailRequest` carry an optional `usage` (`gpuMs`, and per job the model calls, durations and prompt and completion tokens, no prompt text) and the failed attempt's `durationMs`. The API adds each attempt's time to `jobs.duration_ms`, so failed and retried attempts are priced too, and keeps the last attempt's `usage`. Without a reported time (the server lane, an older worker) the time from claim to finish is used (`jobs.attempt_started_at`). |
+| **Cost model** | `smb.cost_rates` is append-only: a change is a new price list effective from a day, never an edit, so an old period keeps the prices it was worked out with. Prices: GPU watts, electricity per kWh, hosting per month, X API per month, reviewer hourly rate, currency. A price list cannot start in the past. It is changed with `PUT /v1/admin/cost-rates` (admin, audited as `cost_rates.change`); unset prices carry over. The seeded list has 250 W and all other prices at zero. |
+| **Cost per approved post** | `(GPU electricity + reviewer time + hosting + X API for every day in the window) / approved posts in the window`. All work in the window is included, whatever became of the post, so rejected and failed posts raise the cost of the approved ones. Prices that are still zero are listed in `unpriced`: that cost is not counted, it is not free. Hosting is a monthly price spread over the days of the month. `GET /v1/admin/metrics/opportunities/:id/cost` gives one post's GPU time, tokens, compute and review cost (hosting is shared and left out). |
+| **Health alerts** | `evaluateHealth` is pure. `worker_offline`: GPU jobs have waited longer than `SMB_ALERT_WORKER_OFFLINE_MINUTES` and no active worker was seen in that time. `dead_jobs`: a job ran out of attempts in the last 24 hours. `publications_uncertain` (critical) and `publications_failed` (last 7 days). `source_failing`: an event poller failed `SMB_ALERT_POLLER_FAILURES` times in a row. `review_waiting`: a post has waited more than `SMB_ALERT_REVIEW_WAIT_HOURS`. |
+| **Logs** | With `SMB_WORKFLOW_ENABLED`, a loop (`SMB_ALERT_INTERVAL_SECONDS`, default 60) logs `alert.opened` when a problem starts and `alert.cleared` when it ends, not on every pass. Each failed job attempt logs `job.failed` (`kind`, `code`, `attempt`, `final`, `opportunityId`), including failures reported by a worker and leases that expired for the last time; publications log `publication.failed` and `publication.uncertain`. None of these lines carries post text or secrets. |
+| **Access** | All routes are administrator-only, because they show costs, worker state and failure details. They are in the route-policy matrix. |
+
+### Routes (all `admin`)
+
+| Method | Path | Returns |
+|---|---|---|
+| `GET` | `/v1/admin/metrics/dashboard?days=30&postType=` | Streak, quality, operations, cost and health in one document |
+| `GET` | `/v1/admin/metrics/streak?days=30&postType=` | Day-by-day record, current and best streak, per post type |
+| `GET` | `/v1/admin/metrics/operations?days=30` | Opportunities opened, scheduled, generated, in review, approved, rejected, published and failed; jobs by kind with failure rate, retries and median and 90th percentile time; failure codes; review and job queues; time to review; publication success by mode and channel (dry runs counted separately); duplicates and refusals from the trigger log |
+| `GET` | `/v1/admin/metrics/cost?days=30` | Compute, review, hosting, X API, total, cost per approved post, unpriced prices |
+| `GET` | `/v1/admin/metrics/health` | Active alerts, workers with their current job, event pollers |
+| `GET` | `/v1/admin/metrics/opportunities/:id/cost` | Cost of one post |
+| `GET`, `PUT` | `/v1/admin/cost-rates` | The price lists, and adding one |
+
+### Reading the dashboard
+
+- **Why did the streak break?** `brokenOn` is the day. Open that day in `streak.days` (`notClean` counts the posts) and list the corrections with `GET /v1/feedback/corrections?from=...&to=...` or `npm run feedback:report -- --corrections`.
+- **A day shows `incomplete` for a long time:** a post on it is still waiting for a decision or was deferred. Decide it, or the day cannot count.
+- **A day shows `below_volume`:** fewer than `SMB_KPI_REQUIRED_DAILY_VOLUME` posts reached review. Check the scheduler and `GET /v1/admin/metrics/operations` (`opened` against `reachedReview`) to see where posts were lost.
+- **Cost looks too low:** check `cost.unpriced` and `reviewTimeMeasured`. Set the prices with `PUT /v1/admin/cost-rates`; review time stays unmeasured until the XLChess review page sends `activeSeconds`.
+- **`worker_offline` is raised:** see `health.workers` for the last time each PC was seen, then the worker's own log and `docs/security/worker-pc.md`.
+
+**Not in 1.19.** The XLChess proxy routes and the dashboard screen, and sending `activeSeconds` from the review page (separate repo). A reviewer action to swap a picture. Streak targets and volumes per post type. Stored daily snapshots. Alerts to email or Discord (the log is the only output). Measured GPU power draw: electricity uses the configured wattage times the time the GPU was held. Per-stage times (the opportunity events and `smb.jobs` still give them). Cost of failed attempts that expired without the worker reporting (their time is not added).
