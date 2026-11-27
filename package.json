@@ -33,6 +33,7 @@
     "candidates:generate": "npm run candidates:generate -w @smb/api --",
     "candidates:revise": "npm run candidates:revise -w @smb/api --",
     "feedback:report": "npm run feedback:report -w @smb/api --",
+    "metrics:report": "npm run metrics:report -w @smb/api --",
     "images:discover": "npm run images:discover -w @smb/api --",
     "assets:verify": "npm run assets:verify -w @smb/api --",
     "assets:purge": "npm run assets:purge -w @smb/api --",

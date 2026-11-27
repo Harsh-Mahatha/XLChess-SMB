@@ -14,3 +14,4 @@ export * from './feedback/index.js';
 export * from './schedule/index.js';
 export * from './championship/index.js';
 export * from './events/index.js';
+export * from './metrics/index.js';

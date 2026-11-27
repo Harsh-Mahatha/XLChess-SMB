@@ -45,6 +45,22 @@ export async function runWorkflowTick(deps: WorkflowDeps): Promise<TickResult> {
       const corrected = await applyCorrections(deps.db, now);
       const staleSkipped = await skipStaleOpportunities(deps.db, now);
       const reaped = await reapExpiredLeases(deps.db, now);
+      for (const r of reaped) {
+        // A job whose holder went silent and is out of attempts: it will not run again.
+        if (r.status === 'dead') {
+          deps.logger.error(
+            {
+              event: 'job.failed',
+              jobId: r.id,
+              kind: r.kind,
+              opportunityId: r.opportunity_id,
+              code: 'lease_expired',
+              final: true,
+            },
+            'job failed',
+          );
+        }
+      }
       const expired = await expireStaleJobs(deps.db, now);
       const { results, errors } = await advanceAll(deps);
       await enqueueJob(deps.db, {

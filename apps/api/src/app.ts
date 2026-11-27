@@ -14,6 +14,7 @@ import { schedulingRouter, type SchedulingRouteDeps } from './http/routes/schedu
 import { championshipsRouter, type ChampionshipRouteDeps } from './http/routes/championships.js';
 import { eventsRouter, type EventsRouteDeps } from './http/routes/events.js';
 import { workerRouter, type WorkerRouteDeps } from './http/routes/worker.js';
+import { metricsRouter, type MetricsRouteDeps } from './http/routes/metrics.js';
 import { workflowRouter, type WorkflowRouteDeps } from './http/routes/workflow.js';
 import type { PublishDeps } from './publishing/service.js';
 
@@ -34,6 +35,7 @@ export interface AppDeps {
   events?: EventsRouteDeps;
   /** Job queue and opportunity retry routes (1.17). */
   workflow?: WorkflowRouteDeps;
+  metrics?: MetricsRouteDeps;
   /** Home-PC worker protocol routes (1.18). */
   worker?: WorkerRouteDeps;
   /** Administrator worker, publish-mode, config override and audit routes (1.18). */
@@ -55,6 +57,7 @@ export function createApp({
   championships,
   events,
   workflow,
+  metrics,
   worker,
   admin,
 }: AppDeps): Express {
@@ -90,6 +93,9 @@ export function createApp({
 
   if (workflow) {
     app.use(workflowRouter(workflow));
+  }
+  if (metrics) {
+    app.use(metricsRouter(metrics));
   }
   if (worker) {
     app.use(workerRouter(worker));

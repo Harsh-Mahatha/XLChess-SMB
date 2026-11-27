@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { GENERATION_SCHEMA_VERSION } from '../generation/schemas.js';
+import { JobUsage } from '../metrics/index.js';
 
 /**
  * Shared worker protocol contracts (docs/ARCHITECTURE.md section 6, module 1.18).
@@ -119,6 +120,8 @@ export const CompleteRequest = z.object({
   leaseId: z.string().uuid(),
   result: z.unknown(),
   durationMs: z.number().int().nonnegative(),
+  /** What the job used (module 1.19). Optional: a worker built before it sends none. */
+  usage: JobUsage.optional(),
 });
 export type CompleteRequest = z.infer<typeof CompleteRequest>;
 
@@ -133,6 +136,9 @@ export const FailRequest = z.object({
   code: z.string().min(1).max(80),
   message: z.string().max(4000),
   retryable: z.boolean(),
+  /** Time spent before failing, for cost figures (module 1.19). */
+  durationMs: z.number().int().nonnegative().optional(),
+  usage: JobUsage.optional(),
 });
 export type FailRequest = z.infer<typeof FailRequest>;
 

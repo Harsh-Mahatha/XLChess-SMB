@@ -12,6 +12,8 @@ export const ApproveBody = z
       .max(4),
     scheduledFor: z.coerce.date().optional(),
     acknowledgeFailedChecks: z.boolean().optional(),
+    /** Seconds the reviewer actively looked at the post before acting. Optional; capped at two hours. */
+    activeSeconds: z.number().int().min(0).max(7200).optional(),
   })
   .strict();
 export type ApproveBody = z.infer<typeof ApproveBody>;
@@ -38,6 +40,8 @@ export const ActionBody = z
     deferUntil: z.coerce.date().optional(),
     candidateId: z.string().uuid().optional(),
     revisionId: z.string().uuid().optional(),
+    /** Seconds the reviewer actively looked at the post before acting. Optional; capped at two hours. */
+    activeSeconds: z.number().int().min(0).max(7200).optional(),
   })
   .strict();
 export type ActionBody = z.infer<typeof ActionBody>;
@@ -47,6 +51,8 @@ export const ReviseBody = z
     baseRevisionId: z.string().uuid(),
     feedback: z.string().max(4000).optional(),
     feedbackTags: z.array(z.string().max(40)).max(10).optional(),
+    /** Seconds the reviewer actively looked at the post before acting. Optional; capped at two hours. */
+    activeSeconds: z.number().int().min(0).max(7200).optional(),
   })
   .strict();
 export type ReviseBody = z.infer<typeof ReviseBody>;

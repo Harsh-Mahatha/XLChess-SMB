@@ -148,7 +148,7 @@ function counts(rows: CountRow[]): OutcomeCounts {
 }
 
 /** The opportunities a report covers: those that became ready for review inside the period. */
-function inPeriod(p: Period): Prisma.Sql {
+export function inPeriod(p: Period): Prisma.Sql {
   return Prisma.sql`
     (${p.from ?? null}::timestamptz is null or o.first_ready_at >= ${p.from ?? null}::timestamptz)
     and (${p.to ?? null}::timestamptz is null or o.first_ready_at < ${p.to ?? null}::timestamptz)

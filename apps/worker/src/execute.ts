@@ -1,9 +1,11 @@
 import {
+  meterProvider,
   runGeneration,
   runRevision,
   type AiProvider,
   type ClaimedJob,
   type GenerationInput,
+  type JobUsage,
   type RevisionRequest,
 } from '@smb/shared';
 import type { GpuMonitor } from './gpu.js';
@@ -23,26 +25,43 @@ export interface ExecuteDeps {
 export interface ExecutedJob {
   value: unknown;
   durationMs: number;
+  usage?: JobUsage;
+}
+
+function withUsage(
+  stage: { value: unknown; durationMs: number },
+  meter: ReturnType<typeof meterProvider> | undefined,
+): ExecutedJob {
+  // The stage time is how long the GPU was held, model loading and unloading included.
+  return {
+    value: stage.value,
+    durationMs: stage.durationMs,
+    usage: { ...(meter?.usage() ?? {}), gpuMs: stage.durationMs },
+  };
 }
 
 /** Runs one claimed GPU job locally, releasing VRAM after the stage finishes. */
 export async function executeJob(deps: ExecuteDeps, job: ClaimedJob): Promise<ExecutedJob> {
   if (job.kind === 'candidates_generate') {
-    const stage = await deps.runner.runLlmStage((llm) =>
-      runGeneration(deps.provider ?? llm.provider(), job.input as GenerationInput),
-    );
-    return { value: stage.value, durationMs: stage.durationMs };
+    let meter: ReturnType<typeof meterProvider> | undefined;
+    const stage = await deps.runner.runLlmStage((llm) => {
+      meter = meterProvider(deps.provider ?? llm.provider());
+      return runGeneration(meter.provider, job.input as GenerationInput);
+    });
+    return withUsage(stage, meter);
   }
 
   if (job.kind === 'revision_from_feedback') {
-    const stage = await deps.runner.runLlmStage((llm) =>
-      runRevision(
-        deps.provider ?? llm.provider(),
+    let meter: ReturnType<typeof meterProvider> | undefined;
+    const stage = await deps.runner.runLlmStage((llm) => {
+      meter = meterProvider(deps.provider ?? llm.provider());
+      return runRevision(
+        meter.provider,
         job.input as GenerationInput,
         job.request as RevisionRequest,
-      ),
-    );
-    return { value: stage.value, durationMs: stage.durationMs };
+      );
+    });
+    return withUsage(stage, meter);
   }
 
   if (job.kind === 'worker_selftest') {

@@ -344,6 +344,7 @@ export async function completeWorkerJob(
   }
   const job = assertOwnershipAndLease(existing, workerId, body.leaseId);
   const payload = (job.payload as Record<string, unknown> | null) ?? {};
+  const metrics = { durationMs: body.durationMs, usage: body.usage };
 
   let summary: unknown;
   if (job.kind === 'candidates_generate') {
@@ -354,6 +355,7 @@ export async function completeWorkerJob(
         message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
         retryable: false,
         now: at,
+        metrics,
       });
       if (job.opportunity_id) await advanceOpportunity(deps.workflow, job.opportunity_id);
       throw new WorkerProtocolError(
@@ -371,6 +373,7 @@ export async function completeWorkerJob(
         retryable: true,
         retryInSeconds: await backoffFor(deps.db, job, job.attempts),
         now: at,
+        metrics,
       });
       if (job.opportunity_id) await advanceOpportunity(deps.workflow, job.opportunity_id);
       throw new WorkerProtocolError(409, 'worker_outdated', 'Prompt versions do not match server', {
@@ -401,6 +404,7 @@ export async function completeWorkerJob(
         ...c,
         retryInSeconds: await backoffFor(deps.db, job, job.attempts),
         now: at,
+        metrics,
       });
       if (job.opportunity_id) await advanceOpportunity(deps.workflow, job.opportunity_id);
       return { outcome: 'rejected', code: c.code };
@@ -413,6 +417,7 @@ export async function completeWorkerJob(
         message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
         retryable: false,
         now: at,
+        metrics,
       });
       if (job.opportunity_id) await advanceOpportunity(deps.workflow, job.opportunity_id);
       throw new WorkerProtocolError(
@@ -430,6 +435,7 @@ export async function completeWorkerJob(
         retryable: true,
         retryInSeconds: await backoffFor(deps.db, job, job.attempts),
         now: at,
+        metrics,
       });
       if (job.opportunity_id) await advanceOpportunity(deps.workflow, job.opportunity_id);
       throw new WorkerProtocolError(
@@ -465,6 +471,7 @@ export async function completeWorkerJob(
         ...c,
         retryInSeconds: await backoffFor(deps.db, job, job.attempts),
         now: at,
+        metrics,
       });
       if (job.opportunity_id) await advanceOpportunity(deps.workflow, job.opportunity_id);
       return { outcome: 'rejected', code: c.code };
@@ -477,6 +484,7 @@ export async function completeWorkerJob(
         message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
         retryable: false,
         now: at,
+        metrics,
       });
       throw new WorkerProtocolError(
         422,
@@ -490,7 +498,7 @@ export async function completeWorkerJob(
     throw new WorkerProtocolError(422, 'bad_result', `Unsupported job kind ${job.kind}`);
   }
 
-  const done = await completeJob(deps.db, job.id, body.leaseId, summary, at);
+  const done = await completeJob(deps.db, job.id, body.leaseId, summary, at, metrics);
   if (done.outcome === 'lease_lost') {
     throw new WorkerProtocolError(409, 'lease_lost', 'The job lease is no longer active');
   }
@@ -520,10 +528,26 @@ export async function failWorkerJob(
     retryable: body.retryable,
     retryInSeconds,
     now: at,
+    metrics: { durationMs: body.durationMs, usage: body.usage },
   });
   if (out.outcome === 'lease_lost') {
     throw new WorkerProtocolError(409, 'lease_lost', 'The job lease is no longer active');
   }
+  const final = out.outcome === 'dead' || out.outcome === 'failed';
+  deps.workflow.logger[final ? 'error' : 'warn'](
+    {
+      event: 'job.failed',
+      jobId: job.id,
+      kind: job.kind,
+      opportunityId: job.opportunity_id,
+      workerId,
+      attempt: job.attempts,
+      code,
+      retryable: body.retryable,
+      final,
+    },
+    'job failed on a worker',
+  );
   if (job.opportunity_id) {
     await advanceOpportunity(deps.workflow, job.opportunity_id);
   }
